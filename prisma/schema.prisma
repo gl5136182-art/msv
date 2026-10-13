@@ -28,6 +28,48 @@ enum Papel {
   @@map("papel")
 }
 
+/// Condição do item (rótulo na interface: "Condição").
+enum Estado {
+  novo
+  usado_bom
+  usado_regular
+  com_defeito
+
+  @@map("estado")
+}
+
+enum Unidade {
+  un
+  cx
+  kg
+  m
+  l
+  par
+  jogo
+
+  @@map("unidade")
+}
+
+enum StatusItem {
+  disponivel
+  esgotado
+  arquivado
+
+  @@map("status_item")
+}
+
+/// Como dimensões e peso foram obtidos (SPEC §6.1, item 5).
+enum DimensoesOrigem {
+  /// Medido à mão.
+  manual
+  /// Recomendação da IA, sem alteração.
+  ia
+  /// Recomendação da IA com algum dos 4 valores editado depois.
+  ia_ajustada
+
+  @@map("dimensoes_origem")
+}
+
 // ---------------------------------------------------------------------------------------
 // UT e categorias (SPEC §5, §6.0)
 // ---------------------------------------------------------------------------------------
@@ -43,6 +85,7 @@ model Ut {
   criadoEm DateTime @default(now()) @map("criado_em")
 
   usuarios Usuario[]
+  itens    Item[]
 
   @@map("ut")
 }
@@ -52,7 +95,76 @@ model Categoria {
   nome  String  @unique @db.VarChar(100)
   ativo Boolean @default(true)
 
+  itens Item[]
+
   @@map("categoria")
+}
+
+// ---------------------------------------------------------------------------------------
+// Itens e fotos (SPEC §5, §6.1)
+// ---------------------------------------------------------------------------------------
+
+model Item {
+  id          String @id @default(cuid())
+  /// O item pertence à UT, não a quem cadastrou (SPEC §3, regra 1).
+  utId        String @map("ut_id")
+  criadoPorId String @map("criado_por_id")
+  categoriaId String @map("categoria_id")
+
+  nome      String  @db.VarChar(150)
+  marca     String  @db.VarChar(100)
+  modelo    String  @db.VarChar(100)
+  descricao String? @db.Text
+  estado    Estado
+  unidade   Unidade
+
+  quantidadeTotal        Int     @map("quantidade_total")
+  /// Nunca fica negativa. Chegando a 0 o item vira `esgotado` (SPEC §3, regras 2 e 3).
+  quantidadeDisponivel   Int     @map("quantidade_disponivel")
+  /// R$ de um item novo. Sempre digitado pelo almoxarife, nunca vem da IA.
+  valorUnitarioReposicao Decimal @map("valor_unitario_reposicao") @db.Decimal(14, 2)
+
+  larguraCm      Decimal @map("largura_cm") @db.Decimal(10, 2)
+  alturaCm       Decimal @map("altura_cm") @db.Decimal(10, 2)
+  profundidadeCm Decimal @map("profundidade_cm") @db.Decimal(10, 2)
+  pesoKg         Decimal @map("peso_kg") @db.Decimal(10, 2)
+
+  dimensoesOrigem DimensoesOrigem @default(manual) @map("dimensoes_origem")
+  /// JSON (texto) da última recomendação da IA, quando houve.
+  iaResposta      String?         @map("ia_resposta") @db.Text
+
+  /// normalizar(nome + marca + modelo + descrição + categoria), preenchida pelo service a cada
+  /// criação ou edição. Cabe em 500 caracteres: o service trunca o excedente.
+  buscaNormalizada String @map("busca_normalizada") @db.VarChar(500)
+
+  status       StatusItem @default(disponivel)
+  criadoEm     DateTime   @default(now()) @map("criado_em")
+  atualizadoEm DateTime   @updatedAt @map("atualizado_em")
+
+  ut        Ut         @relation(fields: [utId], references: [id])
+  criadoPor Usuario    @relation("ItensCriados", fields: [criadoPorId], references: [id])
+  categoria Categoria  @relation(fields: [categoriaId], references: [id])
+  fotos     ItemFoto[]
+
+  @@index([status, utId])
+  @@index([categoriaId])
+  @@map("item")
+}
+
+model ItemFoto {
+  id         String @id @default(cuid())
+  itemId     String @map("item_id")
+  /// Chave da foto principal no storage (`fotos/{aaaa}/{mm}/{uuid}.jpg`). Nunca a URL.
+  chave      String @db.VarChar(255)
+  /// Chave da miniatura (`fotos/{aaaa}/{mm}/{uuid}_thumb.jpg`).
+  chaveThumb String @map("chave_thumb") @db.VarChar(255)
+  /// 0 = capa.
+  ordem      Int
+
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@map("item_foto")
 }
 
 // ---------------------------------------------------------------------------------------
@@ -84,8 +196,9 @@ model Usuario {
 
   ut Ut? @relation(fields: [utId], references: [id])
 
-  sessions Session[]
-  accounts Account[]
+  sessions     Session[]
+  accounts     Account[]
+  itensCriados Item[]    @relation("ItensCriados")
 
   @@index([utId])
   @@map("usuario")

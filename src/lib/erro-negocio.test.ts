@@ -68,4 +68,18 @@ describe("executar", () => {
       }),
     ).rejects.toBe(redirecionamento);
   });
+
+  it("relança a rejeição de headers() durante o prerender, sem registrar como erro", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const pendente = Object.assign(new Error("During prerendering, `headers()` rejects..."), {
+      digest: "HANGING_PROMISE_REJECTION",
+    });
+
+    await expect(
+      executar(async () => {
+        throw pendente;
+      }),
+    ).rejects.toBe(pendente);
+    expect(log).not.toHaveBeenCalled();
+  });
 });

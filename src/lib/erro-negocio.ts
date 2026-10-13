@@ -43,8 +43,9 @@ export function falhaDeValidacao(erro: { issues: ReadonlyArray<{ message: string
  *
  * - Qualquer outro erro é registrado no servidor e vira uma mensagem genérica, sem expor
  *   detalhes técnicos ao usuário.
- * - Os erros de controle de fluxo do Next (`redirect()`, `notFound()`) são relançados: o
- *   Next os usa para navegar e eles não podem ser engolidos.
+ * - Os sinais de controle do Next (`redirect()`, `notFound()` e a rejeição de `headers()`
+ *   durante o prerender) são relançados: o Next os usa internamente e eles não podem ser
+ *   engolidos nem registrados como erro.
  */
 export async function executar<T>(operacao: () => Promise<T>): Promise<Resultado<T>> {
   try {
@@ -58,8 +59,20 @@ export async function executar<T>(operacao: () => Promise<T>): Promise<Resultado
   }
 }
 
+// Sinais internos do Next que não são falha da operação e precisam subir intactos:
+//   NEXT_*                      redirect(), notFound(), prerender interrompido etc.
+//   HANGING_PROMISE_REJECTION   `headers()`/`cookies()` durante o prerender, rejeitado quando o
+//                               prerender termina (a parte dinâmica é adiada, não é erro)
+//   DYNAMIC_SERVER_USAGE        uso de API dinâmica numa rota que seria estática
+//   BAILOUT_TO_CLIENT_SIDE_RENDERING
+const DIGESTS_DE_CONTROLE = new Set([
+  "HANGING_PROMISE_REJECTION",
+  "DYNAMIC_SERVER_USAGE",
+  "BAILOUT_TO_CLIENT_SIDE_RENDERING",
+]);
+
 function ehControleDeFluxoDoNext(erro: unknown): boolean {
   if (typeof erro !== "object" || erro === null || !("digest" in erro)) return false;
   const { digest } = erro as { digest: unknown };
-  return typeof digest === "string" && digest.startsWith("NEXT_");
+  return typeof digest === "string" && (digest.startsWith("NEXT_") || DIGESTS_DE_CONTROLE.has(digest));
 }
