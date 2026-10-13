@@ -8,7 +8,7 @@ import { LogoManserv } from "@/components/marca";
 import { MenuUsuarioServidor } from "./menu-usuario-servidor";
 
 // Barra superior na cor `--topbar` (DESIGN §5). Desktop: 56px, com busca ao centro.
-// A busca é um formulário GET para a vitrine; quem lê o termo é a vitrine (Fase 3).
+// A busca é um formulário GET para `/vitrine?q=…`; a vitrine lê o termo do parâmetro `q`.
 // O sino ainda é só a casca (contador na Fase 4). O menu do avatar lê a sessão, por isso fica
 // atrás de um Suspense.
 export function BarraSuperior() {

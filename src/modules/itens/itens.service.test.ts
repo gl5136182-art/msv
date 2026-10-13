@@ -11,28 +11,32 @@ vi.mock("@/infra/storage", () => ({
 }));
 vi.mock("@/infra/db", () => ({ db: { $transaction: vi.fn() } }));
 vi.mock("./itens.repository", () => ({
-  buscarCategoria: vi.fn(),
+  buscarIdPorRm: vi.fn(),
   buscarPorId: vi.fn(),
   criar: vi.fn(),
   atualizar: vi.fn(),
   atualizarQuantidade: vi.fn(),
   listarPorUt: vi.fn(),
+  listarVitrine: vi.fn(),
+  buscarDaVitrine: vi.fn(),
 }));
 
 import { db } from "@/infra/db";
-import { criarUrlsUpload, remover } from "@/infra/storage";
+import { criarUrlsUpload, obterUrls, remover } from "@/infra/storage";
 
 import * as repository from "./itens.repository";
-import type { ItemRegistro } from "./itens.repository";
-import type { EditarItemEntrada, ItemEntrada } from "./itens.schemas";
+import type { ItemDetalheVitrineRegistro, ItemRegistro, ItemVitrineRegistro } from "./itens.repository";
+import { filtrosVitrineSchema, type EditarItemEntrada, type ItemEntrada } from "./itens.schemas";
 import {
   ajustarQuantidadeDisponivel,
   alterarArquivamento,
   criarItem,
   editarItem,
   listarItensDaUt,
+  listarVitrine,
   montarBuscaNormalizada,
   obterItemDaUt,
+  obterItemDaVitrine,
   prepararUploadFotos,
 } from "./itens.service";
 
@@ -61,7 +65,9 @@ const FOTO_NOVA = {
 
 const entrada: ItemEntrada = {
   nome: "Furadeira de impacto",
-  categoriaId: "cat1",
+  categoria: "material",
+  segmento: "industrial",
+  rm: "123456",
   marca: "Bosch",
   modelo: "GSB 550",
   descricao: "Com maleta",
@@ -83,8 +89,9 @@ function registro(parcial: Partial<ItemRegistro> = {}): ItemRegistro {
     id: "item1",
     utId: "ut1",
     criadoPorId: "alm",
-    categoriaId: "cat1",
-    categoria: { id: "cat1", nome: "Ferramentas elétricas" },
+    categoria: "material",
+    segmento: "industrial",
+    rm: "123456",
     nome: "Furadeira de impacto",
     marca: "Bosch",
     modelo: "GSB 550",
@@ -98,6 +105,11 @@ function registro(parcial: Partial<ItemRegistro> = {}): ItemRegistro {
     alturaCm: new Prisma.Decimal("25"),
     profundidadeCm: new Prisma.Decimal("10"),
     pesoKg: new Prisma.Decimal("2.1"),
+    valorDepreciacaoMensal: null,
+    larguraLoteCm: null,
+    alturaLoteCm: null,
+    profundidadeLoteCm: null,
+    pesoLoteKg: null,
     dimensoesOrigem: "manual",
     iaResposta: null,
     buscaNormalizada: "furadeira",
@@ -114,7 +126,7 @@ const TX = { tx: true };
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(db.$transaction).mockImplementation((async (fn: (tx: unknown) => unknown) => fn(TX)) as never);
-  repo.buscarCategoria.mockResolvedValue({ id: "cat1", nome: "Ferramentas elétricas", ativo: true });
+  repo.buscarIdPorRm.mockResolvedValue(null);
 });
 
 describe("prepararUploadFotos", () => {
@@ -152,25 +164,34 @@ describe("prepararUploadFotos", () => {
 });
 
 describe("montarBuscaNormalizada", () => {
-  it("junta nome, marca, modelo, descrição e categoria, sem acento e em minúsculas", () => {
+  const base = { nome: "Furadeira de Impacto", marca: "Bosch", modelo: "GSB 550", rm: "123456" } as const;
+
+  it("junta nome, marca, modelo, RM, categoria, segmento e descrição, sem acento e em minúsculas", () => {
     expect(
-      montarBuscaNormalizada(
-        { nome: "Furadeira de Impacto", marca: "Bosch", modelo: "GSB 550", descricao: "Com maleta  rígida" },
-        "Ferramentas elétricas",
-      ),
-    ).toBe("furadeira de impacto bosch gsb 550 com maleta rigida ferramentas eletricas");
+      montarBuscaNormalizada({
+        ...base,
+        categoria: "ativo",
+        segmento: "oleo_gas",
+        descricao: "Com maleta  rígida",
+      }),
+    ).toBe("furadeira de impacto bosch gsb 550 123456 ativo oleo & gas com maleta rigida");
   });
 
-  it("aceita item sem descrição", () => {
-    expect(montarBuscaNormalizada({ nome: "Cabo", marca: "X", modelo: "Y" }, "Elétrica")).toBe("cabo x y eletrica");
-  });
-
-  it("cabe nos 500 caracteres da coluna", () => {
-    const longa = montarBuscaNormalizada(
-      { nome: "A", marca: "B", modelo: "C", descricao: "palavra ".repeat(300) },
-      "Outros",
+  it("o segmento entra pelo rótulo, sem acento (Logística → logistica)", () => {
+    expect(montarBuscaNormalizada({ ...base, categoria: "material", segmento: "logistica" })).toBe(
+      "furadeira de impacto bosch gsb 550 123456 material logistica",
     );
+  });
+
+  it("cabe nos 500 caracteres da coluna e o que sobra é o fim da descrição", () => {
+    const longa = montarBuscaNormalizada({
+      ...base,
+      categoria: "material",
+      segmento: "energia",
+      descricao: "palavra ".repeat(300),
+    });
     expect(longa.length).toBe(500);
+    expect(longa.startsWith("furadeira de impacto bosch gsb 550 123456 material energia palavra")).toBe(true);
   });
 });
 
@@ -187,7 +208,11 @@ describe("criarItem", () => {
     expect(dados).toMatchObject({
       utId: "ut1",
       criadoPorId: "alm",
-      categoriaId: "cat1",
+      categoria: "material",
+      segmento: "industrial",
+      rm: "123456",
+      valorDepreciacaoMensal: null,
+      lote: null,
       quantidade: 3,
       status: "disponivel",
       dimensoesOrigem: "manual",
@@ -196,7 +221,7 @@ describe("criarItem", () => {
       valorUnitarioReposicao: 450.9,
       fotos: [FOTO],
     });
-    expect(dados.buscaNormalizada).toBe("furadeira de impacto bosch gsb 550 com maleta ferramentas eletricas");
+    expect(dados.buscaNormalizada).toBe("furadeira de impacto bosch gsb 550 123456 material industrial com maleta");
     // DTO: Decimal vira number, Date vira ISO.
     expect(dto.valorUnitarioReposicao).toBe(450.9);
     expect(dto.pesoKg).toBe(2.1);
@@ -214,13 +239,77 @@ describe("criarItem", () => {
     expect(repo.criar).not.toHaveBeenCalled();
   });
 
-  it("recusa categoria inexistente ou desativada", async () => {
-    repo.buscarCategoria.mockResolvedValueOnce(null);
-    await expect(criarItem(almoxarife, entrada)).rejects.toMatchObject({ codigo: "CATEGORIA_INVALIDA" });
-
-    repo.buscarCategoria.mockResolvedValueOnce({ id: "cat1", nome: "X", ativo: false });
-    await expect(criarItem(almoxarife, entrada)).rejects.toMatchObject({ codigo: "CATEGORIA_INVALIDA" });
+  it("RM já usado por outro item é recusado antes de gravar", async () => {
+    repo.buscarIdPorRm.mockResolvedValueOnce({ id: "outro-item" });
+    await expect(criarItem(almoxarife, entrada)).rejects.toMatchObject({
+      codigo: "RM_DUPLICADO",
+      message: "Já existe um item cadastrado com este RM.",
+    });
     expect(repo.criar).not.toHaveBeenCalled();
+  });
+
+  it("duas gravações simultâneas com o mesmo RM: o índice único (P2002) vira RM duplicado", async () => {
+    repo.criar.mockRejectedValueOnce(Object.assign(new Error("unique"), { code: "P2002" }));
+    await expect(criarItem(almoxarife, entrada)).rejects.toMatchObject({ codigo: "RM_DUPLICADO" });
+  });
+
+  it("outro erro do banco não é confundido com RM duplicado", async () => {
+    repo.criar.mockRejectedValueOnce(new Error("conexão perdida"));
+    await expect(criarItem(almoxarife, entrada)).rejects.toThrow("conexão perdida");
+  });
+
+  it('"Ativo" grava a depreciação mensal; "Material" nunca grava', async () => {
+    await criarItem(almoxarife, { ...entrada, categoria: "ativo", valorDepreciacaoMensal: 250 });
+    expect(repo.criar.mock.calls[0][0]).toMatchObject({ categoria: "ativo", valorDepreciacaoMensal: 250 });
+
+    // Mesmo que a entrada traga um valor, "Material" não tem depreciação.
+    await criarItem(almoxarife, { ...entrada, categoria: "material", valorDepreciacaoMensal: 250 });
+    expect(repo.criar.mock.calls[1][0].valorDepreciacaoMensal).toBeNull();
+  });
+
+  it("grava o lote quando os 4 valores vêm preenchidos", async () => {
+    await criarItem(almoxarife, {
+      ...entrada,
+      larguraLoteCm: 120,
+      alturaLoteCm: 80,
+      profundidadeLoteCm: 100,
+      pesoLoteKg: 350,
+    });
+    expect(repo.criar.mock.calls[0][0].lote).toEqual({ larguraCm: 120, alturaCm: 80, profundidadeCm: 100, pesoKg: 350 });
+  });
+
+  it("lote incompleto na entrada nunca é gravado pela metade", async () => {
+    await criarItem(almoxarife, { ...entrada, larguraLoteCm: 120 });
+    expect(repo.criar.mock.calls[0][0].lote).toBeNull();
+  });
+
+  it("o DTO traz categoria, segmento, RM, depreciação e lote", async () => {
+    repo.criar.mockResolvedValue(
+      registro({
+        categoria: "ativo",
+        segmento: "mineracao",
+        rm: "000789",
+        valorDepreciacaoMensal: new Prisma.Decimal("250.5"),
+        larguraLoteCm: new Prisma.Decimal("120"),
+        alturaLoteCm: new Prisma.Decimal("80"),
+        profundidadeLoteCm: new Prisma.Decimal("100"),
+        pesoLoteKg: new Prisma.Decimal("350.25"),
+      }),
+    );
+    const dto = await criarItem(almoxarife, entrada);
+    expect(dto).toMatchObject({
+      categoria: "ativo",
+      segmento: "mineracao",
+      rm: "000789",
+      valorDepreciacaoMensal: 250.5,
+      lote: { larguraCm: 120, alturaCm: 80, profundidadeCm: 100, pesoKg: 350.25 },
+    });
+  });
+
+  it("item antigo sem segmento, RM, depreciação e lote vira nulos no DTO", async () => {
+    repo.criar.mockResolvedValue(registro({ segmento: null, rm: null }));
+    const dto = await criarItem(almoxarife, entrada);
+    expect(dto).toMatchObject({ segmento: null, rm: null, valorDepreciacaoMensal: null, lote: null });
   });
 });
 
@@ -277,14 +366,51 @@ describe("editarItem", () => {
     await expect(editarItem(almoxarife, entradaEdicao)).rejects.toMatchObject({ codigo: "ITEM_NAO_ENCONTRADO" });
   });
 
-  it("categoria desativada: aceita se for a que o item já tem, recusa se for outra", async () => {
-    repo.buscarCategoria.mockResolvedValue({ id: "cat1", nome: "Antiga", ativo: false });
+  it("o item pode manter o próprio RM", async () => {
+    repo.buscarIdPorRm.mockResolvedValueOnce({ id: "item1" });
     await expect(editarItem(almoxarife, entradaEdicao)).resolves.toBeDefined();
+  });
 
-    repo.buscarCategoria.mockResolvedValue({ id: "cat2", nome: "Outra", ativo: false });
-    await expect(editarItem(almoxarife, { ...entradaEdicao, categoriaId: "cat2" })).rejects.toMatchObject({
-      codigo: "CATEGORIA_INVALIDA",
+  it("RM de outro item é recusado e nada é gravado", async () => {
+    repo.buscarIdPorRm.mockResolvedValueOnce({ id: "outro-item" });
+    await expect(editarItem(almoxarife, entradaEdicao)).rejects.toMatchObject({ codigo: "RM_DUPLICADO" });
+    expect(repo.atualizar).not.toHaveBeenCalled();
+  });
+
+  it("conflito do índice único na transação também vira RM duplicado", async () => {
+    repo.atualizar.mockRejectedValueOnce(Object.assign(new Error("unique"), { code: "P2002" }));
+    await expect(editarItem(almoxarife, entradaEdicao)).rejects.toMatchObject({ codigo: "RM_DUPLICADO" });
+  });
+
+  it("grava as novas regras: categoria, segmento, RM, depreciação e lote, e troca a depreciação ao virar Material", async () => {
+    await editarItem(almoxarife, {
+      ...entradaEdicao,
+      categoria: "ativo",
+      segmento: "facilities",
+      rm: "555",
+      valorDepreciacaoMensal: 90,
+      larguraLoteCm: 10,
+      alturaLoteCm: 20,
+      profundidadeLoteCm: 30,
+      pesoLoteKg: 40,
     });
+    expect(repo.atualizar.mock.calls[0][1]).toMatchObject({
+      categoria: "ativo",
+      segmento: "facilities",
+      rm: "555",
+      valorDepreciacaoMensal: 90,
+      lote: { larguraCm: 10, alturaCm: 20, profundidadeCm: 30, pesoKg: 40 },
+    });
+
+    await editarItem(almoxarife, { ...entradaEdicao, categoria: "material", valorDepreciacaoMensal: 90 });
+    expect(repo.atualizar.mock.calls[1][1]).toMatchObject({ categoria: "material", valorDepreciacaoMensal: null, lote: null });
+  });
+
+  it("a busca normalizada é refeita com RM, categoria e segmento", async () => {
+    await editarItem(almoxarife, { ...entradaEdicao, categoria: "ativo", segmento: "energia", rm: "42" });
+    expect(repo.atualizar.mock.calls[0][1].buscaNormalizada).toBe(
+      "furadeira de impacto bosch gsb 550 42 ativo energia com maleta",
+    );
   });
 });
 
@@ -392,6 +518,223 @@ describe("alterarArquivamento", () => {
       codigo: "SEM_PERMISSAO",
     });
     expect(repo.atualizarQuantidade).not.toHaveBeenCalled();
+  });
+});
+
+function registroVitrine(parcial: Partial<ItemVitrineRegistro> = {}): ItemVitrineRegistro {
+  return {
+    ...registro({ utId: "ut2" }),
+    ut: { id: "ut2", nome: "BASE OPERACIONAL PARADAS", cidade: "Uberaba", uf: "MG" },
+    fotos: [{ chaveThumb: FOTO.chaveThumb }],
+    ...parcial,
+  } as ItemVitrineRegistro;
+}
+
+const filtrosPadrao = filtrosVitrineSchema.parse({});
+
+describe("filtrosVitrineSchema", () => {
+  it("usa os padrões quando a URL não traz nada", () => {
+    expect(filtrosPadrao).toEqual({ ordenar: "recentes", pagina: 1 });
+  });
+
+  it("lê os filtros da URL e normaliza a UF", () => {
+    const r = filtrosVitrineSchema.parse({
+      busca: "  furadeira bosch ",
+      categoria: "ativo",
+      segmento: "energia",
+      uf: "mg",
+      utId: "ut2",
+      estado: "novo",
+      ordenar: "maior_valor",
+      pagina: "3",
+    });
+    expect(r).toEqual({
+      busca: "furadeira bosch",
+      categoria: "ativo",
+      segmento: "energia",
+      uf: "MG",
+      utId: "ut2",
+      estado: "novo",
+      ordenar: "maior_valor",
+      pagina: 3,
+    });
+  });
+
+  it("ignora valores inválidos em vez de falhar", () => {
+    const r = filtrosVitrineSchema.parse({
+      uf: "XX",
+      estado: "quebrado",
+      categoria: "outra",
+      segmento: "varejo",
+      ordenar: "aleatorio",
+      pagina: "-2",
+    });
+    expect(r).toEqual({ ordenar: "recentes", pagina: 1 });
+  });
+});
+
+describe("listarVitrine", () => {
+  beforeEach(() => {
+    repo.listarVitrine.mockResolvedValue({ itens: [registroVitrine()], total: 1 });
+  });
+
+  it("monta a página com UT, miniatura assinada em lote e o marcador da própria UT", async () => {
+    repo.listarVitrine.mockResolvedValue({
+      itens: [
+        registroVitrine(),
+        registroVitrine({ id: "item2", utId: "ut1", ut: { id: "ut1", nome: "Minha UT", cidade: "Santos", uf: "SP" } }),
+        registroVitrine({ id: "item3", fotos: [] }),
+      ],
+      total: 3,
+    });
+    const r = await listarVitrine(almoxarife, filtrosPadrao);
+
+    expect(r.itens.map((i) => i.daMinhaUt)).toEqual([false, true, false]);
+    expect(r.itens[0].urlMiniatura).toBe(`https://dl/${FOTO.chaveThumb}`);
+    expect(r.itens[2].urlMiniatura).toBeNull();
+    expect(r.itens[0].ut).toEqual({ id: "ut2", nome: "BASE OPERACIONAL PARADAS", cidade: "Uberaba", uf: "MG" });
+    expect(r.itens[0].valorUnitarioReposicao).toBe(450.9);
+    expect(r).toMatchObject({ total: 3, pagina: 1, totalPaginas: 1, porPagina: 24 });
+    // Uma única chamada de assinatura para todas as capas (SPEC §6.3).
+    expect(obterUrls).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(obterUrls).mock.calls[0][1]).toBe(3600);
+  });
+
+  it("assina as miniaturas por 1h e não chama o storage quando não há capas", async () => {
+    repo.listarVitrine.mockResolvedValue({ itens: [], total: 0 });
+    await listarVitrine(colaborador, filtrosPadrao);
+    expect(obterUrls).not.toHaveBeenCalled();
+  });
+
+  it("normaliza o termo (sem acento, minúsculas) e o separa em palavras", async () => {
+    await listarVitrine(colaborador, { ...filtrosPadrao, busca: "  FURADEIRA   Elétrica  " });
+    expect(repo.listarVitrine.mock.calls[0][0].termos).toEqual(["furadeira", "eletrica"]);
+  });
+
+  it("repassa filtros, ordenação e o tamanho da página", async () => {
+    await listarVitrine(colaborador, {
+      ...filtrosPadrao,
+      categoria: "ativo",
+      segmento: "oleo_gas",
+      uf: "MG",
+      utId: "ut2",
+      estado: "novo",
+      ordenar: "maior_valor",
+      pagina: 2,
+    });
+    expect(repo.listarVitrine.mock.calls[0][0]).toEqual({
+      termos: [],
+      categoria: "ativo",
+      segmento: "oleo_gas",
+      uf: "MG",
+      utId: "ut2",
+      estado: "novo",
+      ordenar: "maior_valor",
+      pagina: 2,
+      porPagina: 24,
+    });
+  });
+
+  it("calcula o total de páginas de 24", async () => {
+    repo.listarVitrine.mockResolvedValue({ itens: [registroVitrine()], total: 49 });
+    const r = await listarVitrine(colaborador, { ...filtrosPadrao, pagina: 3 });
+    expect(r.totalPaginas).toBe(3);
+    expect(r.pagina).toBe(3);
+  });
+
+  it("página além do fim cai na última", async () => {
+    repo.listarVitrine
+      .mockResolvedValueOnce({ itens: [], total: 30 })
+      .mockResolvedValueOnce({ itens: [registroVitrine()], total: 30 });
+    const r = await listarVitrine(colaborador, { ...filtrosPadrao, pagina: 9 });
+
+    expect(repo.listarVitrine).toHaveBeenCalledTimes(2);
+    expect(repo.listarVitrine.mock.calls[1][0].pagina).toBe(2);
+    expect(r).toMatchObject({ pagina: 2, totalPaginas: 2 });
+    expect(r.itens).toHaveLength(1);
+  });
+
+  it("admin não tem UT: nenhum item é da própria UT", async () => {
+    const r = await listarVitrine(admin, filtrosPadrao);
+    expect(r.itens.every((i) => !i.daMinhaUt)).toBe(true);
+  });
+
+  it("recusa usuário inativo", async () => {
+    await expect(listarVitrine({ ...colaborador, ativo: false }, filtrosPadrao)).rejects.toMatchObject({
+      codigo: "USUARIO_INATIVO",
+    });
+    expect(repo.listarVitrine).not.toHaveBeenCalled();
+  });
+});
+
+describe("obterItemDaVitrine", () => {
+  const FOTO2 = {
+    chave: "fotos/2026/10/323e4567-e89b-12d3-a456-426614174000.jpg",
+    chaveThumb: "fotos/2026/10/323e4567-e89b-12d3-a456-426614174000_thumb.jpg",
+  };
+
+  function detalhe(parcial: Partial<ItemDetalheVitrineRegistro> = {}): ItemDetalheVitrineRegistro {
+    return {
+      ...registro({ utId: "ut2" }),
+      ut: { id: "ut2", nome: "BASE OPERACIONAL PARADAS", cidade: "Uberaba", uf: "MG" },
+      fotos: [
+        { ...FOTO, ordem: 0 },
+        { ...FOTO2, ordem: 1 },
+      ],
+      ...parcial,
+    } as ItemDetalheVitrineRegistro;
+  }
+
+  beforeEach(() => {
+    repo.buscarDaVitrine.mockResolvedValue(detalhe());
+  });
+
+  it("devolve os dados do item, a UT de origem e as fotos assinadas em lote (1h)", async () => {
+    const r = await obterItemDaVitrine(colaborador, "item1");
+
+    expect(r).toMatchObject({
+      id: "item1",
+      valorUnitarioReposicao: 450.9,
+      larguraCm: 30,
+      pesoKg: 2.1,
+      dimensoesOrigem: "manual",
+      criadoEm: "2026-10-13T12:00:00.000Z",
+      ut: { id: "ut2", cidade: "Uberaba", uf: "MG" },
+      daMinhaUt: false,
+      podeSolicitar: true,
+    });
+    expect(r.fotos).toEqual([
+      { urlPrincipal: `https://dl/${FOTO.chave}`, urlMiniatura: `https://dl/${FOTO.chaveThumb}` },
+      { urlPrincipal: `https://dl/${FOTO2.chave}`, urlMiniatura: `https://dl/${FOTO2.chaveThumb}` },
+    ]);
+    expect(obterUrls).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(obterUrls).mock.calls[0][1]).toBe(3600);
+  });
+
+  it("item da própria UT não pode ser solicitado (regra 5)", async () => {
+    repo.buscarDaVitrine.mockResolvedValue(detalhe({ utId: "ut1" }));
+    const r = await obterItemDaVitrine(almoxarife, "item1");
+    expect(r.daMinhaUt).toBe(true);
+    expect(r.podeSolicitar).toBe(false);
+  });
+
+  it("admin vê o item, mas não solicita", async () => {
+    const r = await obterItemDaVitrine(admin, "item1");
+    expect(r.daMinhaUt).toBe(false);
+    expect(r.podeSolicitar).toBe(false);
+  });
+
+  it("item fora da vitrine (esgotado, arquivado, UT inativa ou inexistente) não é encontrado", async () => {
+    repo.buscarDaVitrine.mockResolvedValue(null);
+    await expect(obterItemDaVitrine(colaborador, "item1")).rejects.toMatchObject({ codigo: "ITEM_NAO_ENCONTRADO" });
+    expect(obterUrls).not.toHaveBeenCalled();
+  });
+
+  it("recusa usuário inativo", async () => {
+    await expect(obterItemDaVitrine({ ...colaborador, ativo: false }, "item1")).rejects.toMatchObject({
+      codigo: "USUARIO_INATIVO",
+    });
+    expect(repo.buscarDaVitrine).not.toHaveBeenCalled();
   });
 });
 

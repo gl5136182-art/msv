@@ -32,10 +32,29 @@ enum Papel {
 enum Estado {
   novo
   usado_bom
-  usado_regular
   com_defeito
 
   @@map("estado")
+}
+
+/// Categoria fixa do item: "Ativo" (a empresa paga mensalmente) ou "Material" (comprado, sem mensalidade).
+enum CategoriaItem {
+  ativo
+  material
+
+  @@map("categoria_item")
+}
+
+/// Segmento de negócio em que o item está.
+enum Segmento {
+  industrial
+  facilities
+  logistica
+  mineracao
+  energia
+  oleo_gas
+
+  @@map("segmento")
 }
 
 enum Unidade {
@@ -71,7 +90,7 @@ enum DimensoesOrigem {
 }
 
 // ---------------------------------------------------------------------------------------
-// UT e categorias (SPEC §5, §6.0)
+// UT (SPEC §5, §6.0)
 // ---------------------------------------------------------------------------------------
 
 model Ut {
@@ -90,16 +109,6 @@ model Ut {
   @@map("ut")
 }
 
-model Categoria {
-  id    String  @id @default(cuid())
-  nome  String  @unique @db.VarChar(100)
-  ativo Boolean @default(true)
-
-  itens Item[]
-
-  @@map("categoria")
-}
-
 // ---------------------------------------------------------------------------------------
 // Itens e fotos (SPEC §5, §6.1)
 // ---------------------------------------------------------------------------------------
@@ -109,7 +118,12 @@ model Item {
   /// O item pertence à UT, não a quem cadastrou (SPEC §3, regra 1).
   utId        String @map("ut_id")
   criadoPorId String @map("criado_por_id")
-  categoriaId String @map("categoria_id")
+
+  categoria CategoriaItem
+  /// Obrigatório no cadastro e na edição; fica nulo só nos itens criados antes do campo existir.
+  segmento  Segmento?
+  /// Registro Manserv: só dígitos, único entre todos os itens. Nulo só nos itens anteriores ao campo.
+  rm        String?       @unique @db.VarChar(20)
 
   nome      String  @db.VarChar(150)
   marca     String  @db.VarChar(100)
@@ -123,18 +137,27 @@ model Item {
   quantidadeDisponivel   Int     @map("quantidade_disponivel")
   /// R$ de um item novo. Sempre digitado pelo almoxarife, nunca vem da IA.
   valorUnitarioReposicao Decimal @map("valor_unitario_reposicao") @db.Decimal(14, 2)
+  /// R$ por mês. Só existe para `categoria = ativo` (obrigatório nesse caso).
+  valorDepreciacaoMensal Decimal? @map("valor_depreciacao_mensal") @db.Decimal(14, 2)
 
   larguraCm      Decimal @map("largura_cm") @db.Decimal(10, 2)
   alturaCm       Decimal @map("altura_cm") @db.Decimal(10, 2)
   profundidadeCm Decimal @map("profundidade_cm") @db.Decimal(10, 2)
   pesoKg         Decimal @map("peso_kg") @db.Decimal(10, 2)
 
+  /// Medidas e peso do lote inteiro (todas as unidades juntas), para orçar o frete.
+  /// Tudo ou nada: os 4 preenchidos ou os 4 nulos (validado no service).
+  larguraLoteCm      Decimal? @map("largura_lote_cm") @db.Decimal(10, 2)
+  alturaLoteCm       Decimal? @map("altura_lote_cm") @db.Decimal(10, 2)
+  profundidadeLoteCm Decimal? @map("profundidade_lote_cm") @db.Decimal(10, 2)
+  pesoLoteKg         Decimal? @map("peso_lote_kg") @db.Decimal(10, 2)
+
   dimensoesOrigem DimensoesOrigem @default(manual) @map("dimensoes_origem")
   /// JSON (texto) da última recomendação da IA, quando houve.
   iaResposta      String?         @map("ia_resposta") @db.Text
 
-  /// normalizar(nome + marca + modelo + descrição + categoria), preenchida pelo service a cada
-  /// criação ou edição. Cabe em 500 caracteres: o service trunca o excedente.
+  /// normalizar(nome + marca + modelo + RM + categoria + segmento + descrição), preenchida pelo
+  /// service a cada criação ou edição. Cabe em 500 caracteres: o service trunca o excedente.
   buscaNormalizada String @map("busca_normalizada") @db.VarChar(500)
 
   status       StatusItem @default(disponivel)
@@ -143,11 +166,11 @@ model Item {
 
   ut        Ut         @relation(fields: [utId], references: [id])
   criadoPor Usuario    @relation("ItensCriados", fields: [criadoPorId], references: [id])
-  categoria Categoria  @relation(fields: [categoriaId], references: [id])
   fotos     ItemFoto[]
 
   @@index([status, utId])
-  @@index([categoriaId])
+  @@index([categoria])
+  @@index([segmento])
   @@map("item")
 }
 

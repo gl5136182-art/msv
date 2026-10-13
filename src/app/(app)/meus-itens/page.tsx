@@ -9,7 +9,12 @@ import { Selo } from "@/components/ui/selo";
 import { obterUsuarioLogado } from "@/infra/sessao";
 import { formatarMoeda, formatarNumero } from "@/lib/formatacao";
 import { listarItensDaUt } from "@/modules/itens/itens.actions";
-import { ROTULO_ESTADO, type ItemResumoDto, type StatusItem } from "@/modules/itens/itens.schemas";
+import {
+  ROTULO_CATEGORIA,
+  ROTULO_ESTADO,
+  type ItemResumoDto,
+  type StatusItem,
+} from "@/modules/itens/itens.schemas";
 
 export const metadata: Metadata = { title: "Meus itens" };
 
@@ -84,7 +89,8 @@ function LinhaItem({ item }: { item: ItemResumoDto }) {
             <Selo variante="contorno">{ROTULO_ESTADO[item.estado]}</Selo>
           </div>
           <p className="truncate text-xs text-muted-foreground">
-            {item.marca} · {item.modelo} · {item.categoria.nome}
+            {item.rm ? `RM ${item.rm} · ` : ""}
+            {item.marca} · {item.modelo} · {ROTULO_CATEGORIA[item.categoria]}
           </p>
           <p className="text-xs text-muted-foreground">
             {formatarNumero(item.quantidadeDisponivel)} de {formatarNumero(item.quantidadeTotal)} {item.unidade} ·{" "}

@@ -7,11 +7,14 @@ import {
   ajustarQuantidadeSchema,
   alterarArquivamentoSchema,
   editarItemSchema,
+  filtrosVitrineSchema,
   itemSchema,
   prepararUploadFotosSchema,
+  type ItemDetalheVitrineDto,
   type ItemDto,
   type ItemParaEdicaoDto,
   type ItemResumoDto,
+  type PaginaVitrineDto,
   type UploadFotoDto,
 } from "./itens.schemas";
 import * as service from "./itens.service";
@@ -57,4 +60,14 @@ export async function alterarArquivamento(entrada: unknown): Promise<Resultado<I
 
 export async function listarItensDaUt(): Promise<Resultado<ItemResumoDto[]>> {
   return executar(async () => service.listarItensDaUt(await exigirUsuarioLogado()));
+}
+
+export async function obterItemDaVitrine(id: string): Promise<Resultado<ItemDetalheVitrineDto>> {
+  return executar(async () => service.obterItemDaVitrine(await exigirUsuarioLogado(), id));
+}
+
+/** `entrada` são os parâmetros da URL; o schema ignora o que for inválido (não gera erro). */
+export async function listarVitrine(entrada: unknown): Promise<Resultado<PaginaVitrineDto>> {
+  const filtros = filtrosVitrineSchema.parse(entrada ?? {});
+  return executar(async () => service.listarVitrine(await exigirUsuarioLogado(), filtros));
 }

@@ -1,9 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { DropdownMenu } from "radix-ui";
-import { useTransition } from "react";
+import { useState } from "react";
 
 import { Icone } from "@/components/icone";
 import { sair } from "@/modules/usuarios/usuarios.actions";
@@ -19,15 +18,15 @@ type MenuUsuarioProps = {
 };
 
 export function MenuUsuario({ nome, detalhe }: MenuUsuarioProps) {
-  const router = useRouter();
-  const [saindo, iniciarSaida] = useTransition();
+  const [saindo, setSaindo] = useState(false);
 
-  function aoSair() {
-    iniciarSaida(async () => {
-      await sair();
-      router.replace("/login");
-      router.refresh();
-    });
+  // Recarregamento completo, não `router.replace`: com `cacheComponents` o Next preserva o estado
+  // das páginas já visitadas, e o /login reapareceria com o e-mail e a senha do usuário anterior.
+  // Recarregar descarta todo o estado do cliente (preserving-ui-state.md, "State and authentication").
+  async function aoSair() {
+    setSaindo(true);
+    await sair();
+    window.location.replace("/login");
   }
 
   return (

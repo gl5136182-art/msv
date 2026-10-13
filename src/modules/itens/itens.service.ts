@@ -7,19 +7,26 @@ import { exigirPapel } from "@/lib/permissoes";
 import type { UsuarioLogado } from "@/lib/usuario-logado";
 
 import * as repository from "./itens.repository";
-import type { ItemRegistro } from "./itens.repository";
+import type { DadosNovoItem, ItemRegistro } from "./itens.repository";
 import { calcularAjusteDeQuantidade, statusAposArquivamento } from "./itens.regras";
 import type {
   AjustarQuantidadeEntrada,
   AlterarArquivamentoEntrada,
+  CategoriaItem,
   EditarItemEntrada,
+  FiltrosVitrine,
   ItemDto,
+  ItemDetalheVitrineDto,
   ItemEntrada,
   ItemParaEdicaoDto,
   ItemResumoDto,
+  MedidasLoteDto,
+  PaginaVitrineDto,
   PrepararUploadFotosEntrada,
+  Segmento,
   UploadFotoDto,
 } from "./itens.schemas";
+import { ITENS_POR_PAGINA_VITRINE, ROTULO_CATEGORIA, ROTULO_SEGMENTO } from "./itens.schemas";
 
 // Itens (SPEC §6.1). Só o almoxarife cadastra e edita; a UT vem da sessão.
 
@@ -49,14 +56,72 @@ export async function prepararUploadFotos(
 
 const LIMITE_BUSCA_NORMALIZADA = 500;
 
-/** Texto de busca do item: nome + marca + modelo + descrição + categoria, sem acento (SPEC §5). */
-export function montarBuscaNormalizada(
-  item: { nome: string; marca: string; modelo: string; descricao?: string | null },
-  nomeDaCategoria: string,
-): string {
-  const texto = normalizar([item.nome, item.marca, item.modelo, item.descricao ?? "", nomeDaCategoria].join(" "));
+/**
+ * Texto de busca do item, sem acento (SPEC §5): nome + marca + modelo + RM + categoria +
+ * segmento + descrição. A descrição vai por último porque é o que o corte dos 500 caracteres
+ * leva embora quando ela é longa.
+ */
+export function montarBuscaNormalizada(item: {
+  nome: string;
+  marca: string;
+  modelo: string;
+  rm: string;
+  categoria: CategoriaItem;
+  segmento: Segmento;
+  descricao?: string | null;
+}): string {
+  const texto = normalizar(
+    [
+      item.nome,
+      item.marca,
+      item.modelo,
+      item.rm,
+      ROTULO_CATEGORIA[item.categoria],
+      ROTULO_SEGMENTO[item.segmento],
+      item.descricao ?? "",
+    ].join(" "),
+  );
   // A coluna é VarChar(500): o excedente (em geral, o fim de uma descrição longa) fica sem busca.
   return texto.slice(0, LIMITE_BUSCA_NORMALIZADA);
+}
+
+function decimalOuNulo(valor: { toNumber(): number } | null): number | null {
+  return valor === null ? null : valor.toNumber();
+}
+
+/** As 4 colunas do lote viram um objeto (ou `null` quando não foi informado). */
+function loteDoRegistro(item: {
+  larguraLoteCm: { toNumber(): number } | null;
+  alturaLoteCm: { toNumber(): number } | null;
+  profundidadeLoteCm: { toNumber(): number } | null;
+  pesoLoteKg: { toNumber(): number } | null;
+}): MedidasLoteDto | null {
+  if (!item.larguraLoteCm || !item.alturaLoteCm || !item.profundidadeLoteCm || !item.pesoLoteKg) return null;
+  return {
+    larguraCm: item.larguraLoteCm.toNumber(),
+    alturaCm: item.alturaLoteCm.toNumber(),
+    profundidadeCm: item.profundidadeLoteCm.toNumber(),
+    pesoKg: item.pesoLoteKg.toNumber(),
+  };
+}
+
+/** O lote da entrada (os 4 campos juntos, já validados pelo schema) como objeto, ou `null`. */
+function loteDaEntrada(entrada: {
+  larguraLoteCm?: number;
+  alturaLoteCm?: number;
+  profundidadeLoteCm?: number;
+  pesoLoteKg?: number;
+}): DadosNovoItem["lote"] {
+  const { larguraLoteCm, alturaLoteCm, profundidadeLoteCm, pesoLoteKg } = entrada;
+  if (
+    larguraLoteCm === undefined ||
+    alturaLoteCm === undefined ||
+    profundidadeLoteCm === undefined ||
+    pesoLoteKg === undefined
+  ) {
+    return null;
+  }
+  return { larguraCm: larguraLoteCm, alturaCm: alturaLoteCm, profundidadeCm: profundidadeLoteCm, pesoKg: pesoLoteKg };
 }
 
 export function paraDto(item: ItemRegistro): ItemDto {
@@ -68,15 +133,19 @@ export function paraDto(item: ItemRegistro): ItemDto {
     modelo: item.modelo,
     descricao: item.descricao,
     categoria: item.categoria,
+    segmento: item.segmento,
+    rm: item.rm,
     estado: item.estado,
     unidade: item.unidade,
     quantidadeTotal: item.quantidadeTotal,
     quantidadeDisponivel: item.quantidadeDisponivel,
     valorUnitarioReposicao: item.valorUnitarioReposicao.toNumber(),
+    valorDepreciacaoMensal: decimalOuNulo(item.valorDepreciacaoMensal),
     larguraCm: item.larguraCm.toNumber(),
     alturaCm: item.alturaCm.toNumber(),
     profundidadeCm: item.profundidadeCm.toNumber(),
     pesoKg: item.pesoKg.toNumber(),
+    lote: loteDoRegistro(item),
     dimensoesOrigem: item.dimensoesOrigem,
     status: item.status,
     criadoEm: item.criadoEm.toISOString(),
@@ -95,35 +164,60 @@ export async function criarItem(usuario: UsuarioLogado, entrada: ItemEntrada): P
     throw new ErroNegocio("SEM_UT", "Seu usuário não está vinculado a uma UT. Fale com o administrador.");
   }
 
-  const categoria = await repository.buscarCategoria(entrada.categoriaId);
-  if (!categoria || !categoria.ativo) {
-    throw new ErroNegocio("CATEGORIA_INVALIDA", "Categoria inválida. Selecione outra.");
+  await exigirRmLivre(entrada.rm, null);
+
+  try {
+    const item = await repository.criar({
+      utId: usuario.utId,
+      criadoPorId: usuario.id,
+      categoria: entrada.categoria,
+      segmento: entrada.segmento,
+      rm: entrada.rm,
+      nome: entrada.nome,
+      marca: entrada.marca,
+      modelo: entrada.modelo,
+      descricao: entrada.descricao ?? null,
+      estado: entrada.estado,
+      unidade: entrada.unidade,
+      quantidade: entrada.quantidade,
+      valorUnitarioReposicao: entrada.valorUnitarioReposicao,
+      valorDepreciacaoMensal: depreciacaoDaEntrada(entrada),
+      larguraCm: entrada.larguraCm,
+      alturaCm: entrada.alturaCm,
+      profundidadeCm: entrada.profundidadeCm,
+      pesoKg: entrada.pesoKg,
+      lote: loteDaEntrada(entrada),
+      dimensoesOrigem: "manual",
+      iaResposta: null,
+      buscaNormalizada: montarBuscaNormalizada(entrada),
+      status: "disponivel",
+      fotos: entrada.fotos,
+    });
+    return paraDto(item);
+  } catch (erro) {
+    throw traduzirErroDeRmDuplicado(erro);
   }
+}
 
-  const item = await repository.criar({
-    utId: usuario.utId,
-    criadoPorId: usuario.id,
-    categoriaId: categoria.id,
-    nome: entrada.nome,
-    marca: entrada.marca,
-    modelo: entrada.modelo,
-    descricao: entrada.descricao ?? null,
-    estado: entrada.estado,
-    unidade: entrada.unidade,
-    quantidade: entrada.quantidade,
-    valorUnitarioReposicao: entrada.valorUnitarioReposicao,
-    larguraCm: entrada.larguraCm,
-    alturaCm: entrada.alturaCm,
-    profundidadeCm: entrada.profundidadeCm,
-    pesoKg: entrada.pesoKg,
-    dimensoesOrigem: "manual",
-    iaResposta: null,
-    buscaNormalizada: montarBuscaNormalizada(entrada, categoria.nome),
-    status: "disponivel",
-    fotos: entrada.fotos,
-  });
+const MENSAGEM_RM_DUPLICADO = "Já existe um item cadastrado com este RM.";
 
-  return paraDto(item);
+/** O RM é único entre todos os itens (SPEC §5). `idAtual` é o item em edição, que pode manter o próprio RM. */
+async function exigirRmLivre(rm: string, idAtual: string | null): Promise<void> {
+  const existente = await repository.buscarIdPorRm(rm);
+  if (existente && existente.id !== idAtual) {
+    throw new ErroNegocio("RM_DUPLICADO", MENSAGEM_RM_DUPLICADO);
+  }
+}
+
+// Última barreira: o índice único do banco (P2002) para dois cadastros simultâneos com o mesmo RM.
+function traduzirErroDeRmDuplicado(erro: unknown): unknown {
+  const codigo = typeof erro === "object" && erro !== null && "code" in erro ? erro.code : undefined;
+  return codigo === "P2002" ? new ErroNegocio("RM_DUPLICADO", MENSAGEM_RM_DUPLICADO) : erro;
+}
+
+/** Depreciação mensal só existe para "Ativo" (o schema já descarta a de "Material"; aqui é a garantia). */
+function depreciacaoDaEntrada(entrada: { categoria: CategoriaItem; valorDepreciacaoMensal?: number }): number | null {
+  return entrada.categoria === "ativo" ? (entrada.valorDepreciacaoMensal ?? null) : null;
 }
 
 /** Busca o item e confere que ele é da UT do almoxarife (regra 1: o item pertence à UT). */
@@ -160,34 +254,39 @@ export async function editarItem(usuario: UsuarioLogado, entrada: EditarItemEntr
   exigirPapel(usuario, "almoxarife");
   const atual = await buscarItemDaUt(usuario, entrada.id);
 
-  const categoria = await repository.buscarCategoria(entrada.categoriaId);
-  // Manter a categoria que o item já tem é permitido mesmo desativada (SPEC §6.0).
-  if (!categoria || (!categoria.ativo && categoria.id !== atual.categoriaId)) {
-    throw new ErroNegocio("CATEGORIA_INVALIDA", "Categoria inválida. Selecione outra.");
-  }
+  await exigirRmLivre(entrada.rm, atual.id);
 
-  const atualizado = await db.$transaction((tx) =>
-    repository.atualizar(
-      atual.id,
-      {
-        categoriaId: categoria.id,
-        nome: entrada.nome,
-        marca: entrada.marca,
-        modelo: entrada.modelo,
-        descricao: entrada.descricao ?? null,
-        estado: entrada.estado,
-        unidade: entrada.unidade,
-        valorUnitarioReposicao: entrada.valorUnitarioReposicao,
-        larguraCm: entrada.larguraCm,
-        alturaCm: entrada.alturaCm,
-        profundidadeCm: entrada.profundidadeCm,
-        pesoKg: entrada.pesoKg,
-        buscaNormalizada: montarBuscaNormalizada(entrada, categoria.nome),
-        fotos: entrada.fotos,
-      },
-      tx,
-    ),
-  );
+  let atualizado: ItemRegistro;
+  try {
+    atualizado = await db.$transaction((tx) =>
+      repository.atualizar(
+        atual.id,
+        {
+          categoria: entrada.categoria,
+          segmento: entrada.segmento,
+          rm: entrada.rm,
+          nome: entrada.nome,
+          marca: entrada.marca,
+          modelo: entrada.modelo,
+          descricao: entrada.descricao ?? null,
+          estado: entrada.estado,
+          unidade: entrada.unidade,
+          valorUnitarioReposicao: entrada.valorUnitarioReposicao,
+          valorDepreciacaoMensal: depreciacaoDaEntrada(entrada),
+          larguraCm: entrada.larguraCm,
+          alturaCm: entrada.alturaCm,
+          profundidadeCm: entrada.profundidadeCm,
+          pesoKg: entrada.pesoKg,
+          lote: loteDaEntrada(entrada),
+          buscaNormalizada: montarBuscaNormalizada(entrada),
+          fotos: entrada.fotos,
+        },
+        tx,
+      ),
+    );
+  } catch (erro) {
+    throw traduzirErroDeRmDuplicado(erro);
+  }
 
   const mantidas = new Set(entrada.fotos.flatMap((f) => [f.chave, f.chaveThumb]));
   const removidas = atual.fotos.flatMap((f) => [f.chave, f.chaveThumb]).filter((chave) => !mantidas.has(chave));
@@ -243,6 +342,119 @@ export async function alterarArquivamento(
       status,
     }),
   );
+}
+
+const MAXIMO_TERMOS_BUSCA = 8;
+
+/**
+ * Vitrine (SPEC §6.3): itens `disponivel` de UTs ativas, para qualquer usuário logado.
+ * A busca exige todas as palavras digitadas (sem acento, sem caixa). As miniaturas das capas
+ * são assinadas de uma vez, válidas por 1h. Itens da própria UT vêm marcados (`daMinhaUt`).
+ */
+export async function listarVitrine(usuario: UsuarioLogado, filtros: FiltrosVitrine): Promise<PaginaVitrineDto> {
+  exigirPapel(usuario, "colaborador", "almoxarife", "admin");
+
+  const termos = normalizar(filtros.busca ?? "")
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, MAXIMO_TERMOS_BUSCA);
+
+  const consulta = {
+    termos,
+    categoria: filtros.categoria,
+    segmento: filtros.segmento,
+    uf: filtros.uf,
+    utId: filtros.utId,
+    estado: filtros.estado,
+    ordenar: filtros.ordenar,
+    pagina: filtros.pagina,
+    porPagina: ITENS_POR_PAGINA_VITRINE,
+  };
+
+  let { itens, total } = await repository.listarVitrine(consulta);
+  const totalPaginas = Math.max(1, Math.ceil(total / ITENS_POR_PAGINA_VITRINE));
+
+  // Página além do fim (URL antiga, filtro mais restrito): mostra a última em vez de uma lista vazia.
+  let pagina = filtros.pagina;
+  if (pagina > totalPaginas) {
+    pagina = totalPaginas;
+    ({ itens, total } = await repository.listarVitrine({ ...consulta, pagina }));
+  }
+
+  const capas = itens.map((item) => item.fotos[0]?.chaveThumb).filter((chave): chave is string => Boolean(chave));
+  const urls = capas.length > 0 ? await obterUrls(capas, VALIDADE_URLS_SEG) : {};
+
+  return {
+    itens: itens.map((item) => ({
+      id: item.id,
+      nome: item.nome,
+      marca: item.marca,
+      modelo: item.modelo,
+      rm: item.rm,
+      categoria: item.categoria,
+      segmento: item.segmento,
+      estado: item.estado,
+      unidade: item.unidade,
+      quantidadeDisponivel: item.quantidadeDisponivel,
+      valorUnitarioReposicao: item.valorUnitarioReposicao.toNumber(),
+      ut: item.ut,
+      daMinhaUt: usuario.utId !== null && item.utId === usuario.utId,
+      urlMiniatura: (item.fotos[0] && urls[item.fotos[0].chaveThumb]) || null,
+    })),
+    total,
+    pagina,
+    totalPaginas,
+    porPagina: ITENS_POR_PAGINA_VITRINE,
+  };
+}
+
+/**
+ * Detalhe do item na vitrine (SPEC §6.3). Qualquer usuário logado vê item `disponivel` de UT
+ * ativa; fora disso o item "não existe" para a vitrine. Fotos assinadas em lote, válidas por 1h.
+ */
+export async function obterItemDaVitrine(usuario: UsuarioLogado, id: string): Promise<ItemDetalheVitrineDto> {
+  exigirPapel(usuario, "colaborador", "almoxarife", "admin");
+
+  const item = await repository.buscarDaVitrine(id);
+  if (!item) {
+    throw new ErroNegocio("ITEM_NAO_ENCONTRADO", "Item não encontrado ou não está mais disponível.");
+  }
+
+  const urls = await obterUrls(
+    item.fotos.flatMap((f) => [f.chave, f.chaveThumb]),
+    VALIDADE_URLS_SEG,
+  );
+  const daMinhaUt = usuario.utId !== null && item.utId === usuario.utId;
+
+  return {
+    id: item.id,
+    nome: item.nome,
+    marca: item.marca,
+    modelo: item.modelo,
+    descricao: item.descricao,
+    rm: item.rm,
+    categoria: item.categoria,
+    segmento: item.segmento,
+    estado: item.estado,
+    unidade: item.unidade,
+    quantidadeDisponivel: item.quantidadeDisponivel,
+    valorUnitarioReposicao: item.valorUnitarioReposicao.toNumber(),
+    valorDepreciacaoMensal: decimalOuNulo(item.valorDepreciacaoMensal),
+    larguraCm: item.larguraCm.toNumber(),
+    alturaCm: item.alturaCm.toNumber(),
+    profundidadeCm: item.profundidadeCm.toNumber(),
+    pesoKg: item.pesoKg.toNumber(),
+    lote: loteDoRegistro(item),
+    dimensoesOrigem: item.dimensoesOrigem,
+    criadoEm: item.criadoEm.toISOString(),
+    ut: item.ut,
+    daMinhaUt,
+    podeSolicitar: usuario.papel !== "admin" && !daMinhaUt,
+    fotos: item.fotos.map((f) => ({
+      urlPrincipal: urls[f.chave] ?? null,
+      urlMiniatura: urls[f.chaveThumb] ?? null,
+    })),
+  };
 }
 
 /** "Meus itens": todos os itens da UT do almoxarife, com a miniatura da capa assinada em lote. */

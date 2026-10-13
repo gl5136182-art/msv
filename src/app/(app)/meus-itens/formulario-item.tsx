@@ -2,8 +2,8 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useRouter } from "next/navigation";
-import { useCallback, useMemo, useState } from "react";
-import { Controller, useForm } from "react-hook-form";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -13,9 +13,14 @@ import { Seletor } from "@/components/ui/seletor";
 import { decimalParaCampo, mascararMoeda, moedaParaCampo } from "@/lib/numeros-ptbr";
 import { criarItem, editarItem } from "@/modules/itens/itens.actions";
 import {
+  CATEGORIAS_ITEM,
   ESTADOS,
+  ROTULO_CATEGORIA,
   ROTULO_ESTADO,
+  ROTULO_SEGMENTO,
   ROTULO_UNIDADE,
+  SEGMENTOS,
+  TAMANHO_MAXIMO_RM,
   UNIDADES,
   itemSchema,
   type ItemEntrada,
@@ -26,17 +31,48 @@ import {
 import { CampoFotos, type FotoFormulario } from "./campo-fotos";
 
 type FormularioItemProps = {
-  categorias: Array<{ id: string; nome: string }>;
   /** Item em edição; sem ele o formulário cadastra um novo. */
   item?: ItemParaEdicaoDto;
 };
 
 const MENSAGEM_FOTOS_PENDENTES = "Aguarde o envio das fotos ou remova as que falharam.";
 
+// Com `cacheComponents`, o Next não desmonta a página ao navegar: esconde-a (React Activity) e
+// preserva o estado e o DOM. Sem tratamento, depois de salvar um cadastro e voltar a
+// "Cadastrar item", o formulário reaparecia com os dados e as fotos do item anterior.
+//
+// Este wrapper recria o formulário inteiro (react-hook-form, lista de fotos, mensagens) quando
+// a página é escondida **depois de um cadastro salvo**. Rascunho abandonado sem salvar continua
+// preservado de propósito (sinal ruim no almoxarifado). A edição não é zerada: o estado
+// preservado já é o que foi salvo.
+// Ver node_modules/next/dist/docs/01-app/02-guides/preserving-ui-state.md.
+export function FormularioItem(props: FormularioItemProps) {
+  const [geracao, setGeracao] = useState(0);
+  const cadastroSalvoRef = useRef(false);
+
+  useLayoutEffect(() => {
+    return () => {
+      if (!cadastroSalvoRef.current) return;
+      cadastroSalvoRef.current = false;
+      setGeracao((g) => g + 1);
+    };
+  }, []);
+
+  return (
+    <CorpoFormularioItem
+      key={geracao}
+      {...props}
+      aoSalvar={() => {
+        if (!props.item) cadastroSalvoRef.current = true;
+      }}
+    />
+  );
+}
+
 // Cadastro de item (SPEC §6.1), pensado para o celular dentro do almoxarifado: se o upload ou
 // o salvamento falhar, nada do que foi preenchido é perdido (a tela não é recarregada e as
 // fotos já enviadas continuam na lista).
-export function FormularioItem({ categorias, item }: FormularioItemProps) {
+function CorpoFormularioItem({ item, aoSalvar }: FormularioItemProps & { aoSalvar: () => void }) {
   const router = useRouter();
   const [erro, setErro] = useState<string | null>(null);
   const [fotosPendentes, setFotosPendentes] = useState(false);
@@ -60,6 +96,7 @@ export function FormularioItem({ categorias, item }: FormularioItemProps) {
     control,
     handleSubmit,
     setValue,
+    setError,
     formState: { errors, isSubmitting, isSubmitted },
   } = useForm<ItemFormularioValores, unknown, ItemEntrada>({
     resolver: zodResolver(itemSchema),
@@ -68,7 +105,12 @@ export function FormularioItem({ categorias, item }: FormularioItemProps) {
     defaultValues: item
       ? {
           nome: item.nome,
-          categoriaId: item.categoria.id,
+          rm: item.rm ?? "",
+          categoria: item.categoria,
+          valorDepreciacaoMensal:
+            item.valorDepreciacaoMensal === null ? "" : moedaParaCampo(item.valorDepreciacaoMensal),
+          // Itens antigos podem não ter segmento: o campo abre vazio e é obrigatório ao salvar.
+          segmento: item.segmento ?? undefined,
           marca: item.marca,
           modelo: item.modelo,
           descricao: item.descricao ?? "",
@@ -80,11 +122,18 @@ export function FormularioItem({ categorias, item }: FormularioItemProps) {
           alturaCm: decimalParaCampo(item.alturaCm),
           profundidadeCm: decimalParaCampo(item.profundidadeCm),
           pesoKg: decimalParaCampo(item.pesoKg),
+          larguraLoteCm: item.lote ? decimalParaCampo(item.lote.larguraCm) : "",
+          alturaLoteCm: item.lote ? decimalParaCampo(item.lote.alturaCm) : "",
+          profundidadeLoteCm: item.lote ? decimalParaCampo(item.lote.profundidadeCm) : "",
+          pesoLoteKg: item.lote ? decimalParaCampo(item.lote.pesoKg) : "",
           fotos: item.fotos.map(({ chave, chaveThumb }) => ({ chave, chaveThumb })),
         }
       : {
           nome: "",
-          categoriaId: "",
+          rm: "",
+          categoria: undefined,
+          valorDepreciacaoMensal: "",
+          segmento: undefined,
           marca: "",
           modelo: "",
           descricao: "",
@@ -96,9 +145,16 @@ export function FormularioItem({ categorias, item }: FormularioItemProps) {
           alturaCm: "",
           profundidadeCm: "",
           pesoKg: "",
+          larguraLoteCm: "",
+          alturaLoteCm: "",
+          profundidadeLoteCm: "",
+          pesoLoteKg: "",
           fotos: [],
         },
   });
+
+  // A depreciação só existe para "Ativo" (SPEC §6.1).
+  const categoria = useWatch({ control, name: "categoria" });
 
   const aoMudarFotos = useCallback(
     (fotos: FotoFormulario[]) => {
@@ -116,10 +172,15 @@ export function FormularioItem({ categorias, item }: FormularioItemProps) {
     const resultado = item ? await editarItem({ ...dados, id: item.id }) : await criarItem(dados);
     if (!resultado.ok) {
       // Mantém tudo na tela: o usuário só toca em "Salvar" de novo.
+      if (resultado.codigo === "RM_DUPLICADO") {
+        setError("rm", { message: resultado.erro });
+        return;
+      }
       setErro(resultado.erro);
       return;
     }
     toast.success("Item salvo.");
+    aoSalvar();
     router.push("/meus-itens");
     router.refresh();
   }
@@ -162,16 +223,78 @@ export function FormularioItem({ categorias, item }: FormularioItemProps) {
           />
         </Campo>
 
-        <Campo htmlFor="item-categoria" rotulo="Categoria" obrigatorio erro={errors.categoriaId?.message}>
+        <Campo
+          htmlFor="item-rm"
+          rotulo="RM (Registro Manserv)"
+          obrigatorio
+          ajuda="Só números. Cada item tem um RM único."
+          erro={errors.rm?.message}
+        >
+          <Input
+            id="item-rm"
+            inputMode="numeric"
+            autoComplete="off"
+            maxLength={TAMANHO_MAXIMO_RM}
+            aria-invalid={errors.rm ? true : undefined}
+            {...register("rm")}
+          />
+        </Campo>
+
+        <Campo
+          htmlFor="item-categoria"
+          rotulo="Categoria"
+          obrigatorio
+          ajuda="Ativo: item que pagamos mensalmente. Material: item comprado, sem mensalidade."
+          erro={errors.categoria?.message}
+        >
           <Seletor
             id="item-categoria"
-            aria-invalid={errors.categoriaId ? true : undefined}
-            {...register("categoriaId")}
+            aria-invalid={errors.categoria ? true : undefined}
+            {...register("categoria")}
           >
             <option value="">Selecione</option>
-            {categorias.map((categoria) => (
-              <option key={categoria.id} value={categoria.id}>
-                {categoria.nome}
+            {CATEGORIAS_ITEM.map((c) => (
+              <option key={c} value={c}>
+                {ROTULO_CATEGORIA[c]}
+              </option>
+            ))}
+          </Seletor>
+        </Campo>
+
+        {categoria === "ativo" ? (
+          <Controller
+            control={control}
+            name="valorDepreciacaoMensal"
+            render={({ field, fieldState }) => (
+              <Campo
+                htmlFor="item-depreciacao"
+                rotulo="Valor de depreciação (por mês)"
+                obrigatorio
+                erro={fieldState.error?.message}
+              >
+                <Input
+                  id="item-depreciacao"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  placeholder="R$ 0,00"
+                  aria-invalid={fieldState.error ? true : undefined}
+                  name={field.name}
+                  ref={field.ref}
+                  onBlur={field.onBlur}
+                  value={typeof field.value === "number" ? moedaParaCampo(field.value) : (field.value ?? "")}
+                  onChange={(e) => field.onChange(mascararMoeda(e.target.value))}
+                />
+              </Campo>
+            )}
+          />
+        ) : null}
+
+        <Campo htmlFor="item-segmento" rotulo="Segmento" obrigatorio erro={errors.segmento?.message}>
+          <Seletor id="item-segmento" aria-invalid={errors.segmento ? true : undefined} {...register("segmento")}>
+            <option value="">Selecione</option>
+            {SEGMENTOS.map((segmento) => (
+              <option key={segmento} value={segmento}>
+                {ROTULO_SEGMENTO[segmento]}
               </option>
             ))}
           </Seletor>
@@ -335,6 +458,54 @@ export function FormularioItem({ categorias, item }: FormularioItemProps) {
               autoComplete="off"
               aria-invalid={errors.pesoKg ? true : undefined}
               {...register("pesoKg")}
+            />
+          </Campo>
+        </div>
+      </section>
+
+      <section className="flex flex-col gap-4 rounded-md border border-border bg-card p-4">
+        <div>
+          <h2 className="text-base font-medium">Dimensões e peso do lote</h2>
+          <p className="text-xs text-muted-foreground">
+            Opcional. Medidas e peso de todas as unidades juntas, para orçar o frete. Preencha os 4 ou nenhum.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Campo htmlFor="lote-largura" rotulo="Largura (cm)" erro={errors.larguraLoteCm?.message}>
+            <Input
+              id="lote-largura"
+              inputMode="decimal"
+              autoComplete="off"
+              aria-invalid={errors.larguraLoteCm ? true : undefined}
+              {...register("larguraLoteCm")}
+            />
+          </Campo>
+          <Campo htmlFor="lote-altura" rotulo="Altura (cm)" erro={errors.alturaLoteCm?.message}>
+            <Input
+              id="lote-altura"
+              inputMode="decimal"
+              autoComplete="off"
+              aria-invalid={errors.alturaLoteCm ? true : undefined}
+              {...register("alturaLoteCm")}
+            />
+          </Campo>
+          <Campo htmlFor="lote-profundidade" rotulo="Profundidade (cm)" erro={errors.profundidadeLoteCm?.message}>
+            <Input
+              id="lote-profundidade"
+              inputMode="decimal"
+              autoComplete="off"
+              aria-invalid={errors.profundidadeLoteCm ? true : undefined}
+              {...register("profundidadeLoteCm")}
+            />
+          </Campo>
+          <Campo htmlFor="lote-peso" rotulo="Peso (kg)" erro={errors.pesoLoteKg?.message}>
+            <Input
+              id="lote-peso"
+              inputMode="decimal"
+              autoComplete="off"
+              aria-invalid={errors.pesoLoteKg ? true : undefined}
+              {...register("pesoLoteKg")}
             />
           </Campo>
         </div>

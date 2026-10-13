@@ -1,6 +1,6 @@
-// Seed base (Fase 1, SPEC §6.0): categorias aprovadas, UTs de prisma/seed/uts.csv e o primeiro
-// admin, com dados do .env. Pode rodar quantas vezes for preciso (idempotente):
-//   - categorias e UTs: upsert (UT pelo código; nome, cidade e UF seguem o CSV, o status não muda);
+// Seed base (Fase 1, SPEC §6.0): UTs de prisma/seed/uts.csv e o primeiro admin, com dados do
+// .env. Pode rodar quantas vezes for preciso (idempotente):
+//   - UTs: upsert pelo código (nome, cidade e UF seguem o CSV, o status não muda);
 //   - admin: criado só se ainda não existir; a senha de um admin existente nunca é alterada.
 // Falha com erro claro se alguma linha do CSV estiver sem cidade ou UF, ou se faltar variável.
 
@@ -16,29 +16,7 @@ import { cpfValido, limparCpf } from "@/lib/cpf";
 
 import { lerUtsDoCsv } from "./uts-csv";
 
-const CATEGORIAS_APROVADAS = [
-  "Ferramentas manuais",
-  "Ferramentas elétricas",
-  "EPI",
-  "Elétrica",
-  "Hidráulica",
-  "Mecânica e peças",
-  "Informática",
-  "Mobiliário",
-  "Escritório",
-  "Limpeza",
-  "Equipamentos de medição",
-  "Outros",
-];
-
 const SENHA_TAMANHO_MINIMO = 8;
-
-async function semearCategorias(): Promise<void> {
-  for (const nome of CATEGORIAS_APROVADAS) {
-    await db.categoria.upsert({ where: { nome }, update: {}, create: { nome } });
-  }
-  console.log(`seed: ${CATEGORIAS_APROVADAS.length} categorias garantidas.`);
-}
 
 async function semearUts(): Promise<void> {
   const caminho = join(process.cwd(), "prisma", "seed", "uts.csv");
@@ -120,7 +98,6 @@ async function semearAdmin(): Promise<void> {
 }
 
 async function semear(): Promise<void> {
-  await semearCategorias();
   await semearUts();
   await semearAdmin();
 }

@@ -3,7 +3,6 @@ import type { Metadata } from "next";
 
 import { CabecalhoPagina } from "@/components/layout/cabecalho-pagina";
 import { obterUsuarioLogado } from "@/infra/sessao";
-import { listarCategoriasAtivas } from "@/modules/categorias/categorias.actions";
 
 import { FormularioItem } from "../formulario-item";
 
@@ -14,19 +13,10 @@ export default async function PaginaNovoItem() {
   const usuario = await obterUsuarioLogado();
   if (!usuario || usuario.papel !== "almoxarife") notFound();
 
-  const categorias = await listarCategoriasAtivas();
-  if (!categorias.ok) {
-    return (
-      <p role="alert" className="text-sm text-destructive">
-        {categorias.erro}
-      </p>
-    );
-  }
-
   return (
     <div className="mx-auto w-full max-w-3xl">
       <CabecalhoPagina titulo="Cadastrar item" />
-      <FormularioItem categorias={categorias.dados} />
+      <FormularioItem />
     </div>
   );
 }

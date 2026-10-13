@@ -9,7 +9,6 @@ import { cn } from "@/lib/utils";
 const SECOES = [
   { href: "/administracao/uts", rotulo: "UTs" },
   { href: "/administracao/usuarios", rotulo: "Usuários" },
-  { href: "/administracao/categorias", rotulo: "Categorias" },
 ];
 
 // Abas das seções de administração. Ativa em laranja com sublinhado (DESIGN §5: laranja marca
