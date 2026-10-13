@@ -12,6 +12,9 @@ const plexSans = IBM_Plex_Sans({
 export const metadata: Metadata = {
   title: { default: "MSV", template: "%s · MSV" },
   description: "Marketplace interno de itens da Manserv",
+  // iOS não lê os ícones do manifest: usa o apple-touch-icon (DESIGN §9) ao adicionar à tela de início.
+  icons: { apple: "/icons/apple-touch-icon.png" },
+  appleWebApp: { capable: true, title: "MSV" },
 };
 
 // Barra de status do celular acompanha a barra superior laranja (DESIGN §9).
