@@ -7,7 +7,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.ts", "prisma/**/*.test.ts"],
     // Os testes são dos services e utilitários puros (CLAUDE.md); enquanto não há nenhum, não falha.
     passWithNoTests: true,
   },

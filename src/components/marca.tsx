@@ -10,9 +10,9 @@ type MarcaProps = Omit<SVGProps<SVGSVGElement>, "width" | "height"> & {
 };
 
 export function LogoManserv({ altura = 20, ...props }: MarcaProps) {
-  return <LogoSvg height={altura} width="auto" {...props} />;
+  return <LogoSvg height={altura} style={{ width: "auto" }} {...props} />;
 }
 
 export function SimboloManserv({ altura = 20, ...props }: MarcaProps) {
-  return <SimboloSvg height={altura} width="auto" {...props} />;
+  return <SimboloSvg height={altura} style={{ width: "auto" }} {...props} />;
 }

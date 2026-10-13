@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Sans } from "next/font/google";
 import { RegistrarSw } from "@/components/registrar-sw";
+import { Toaster } from "@/components/ui/toaster";
 import "./globals.css";
 
 const plexSans = IBM_Plex_Sans({
@@ -29,6 +30,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="pt-BR" className={`${plexSans.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col text-sm">
         {children}
+        <Toaster />
         <RegistrarSw />
       </body>
     </html>

@@ -1,6 +1,9 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 
-import { PrismaClient } from "@/generated/prisma/client";
+import { PrismaClient, type Prisma } from "@/generated/prisma/client";
+
+/** Client do Prisma ou o client de uma transação: todo repository aceita um destes (CLAUDE.md). */
+export type ClienteDb = PrismaClient | Prisma.TransactionClient;
 
 // Instância única do Prisma. Só os repositories importam daqui (CLAUDE.md, Arquitetura).
 // Runtime usa o pooler do Supabase (DATABASE_URL); as migrations usam DIRECT_URL (prisma.config.ts).

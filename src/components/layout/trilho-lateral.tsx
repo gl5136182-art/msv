@@ -6,11 +6,11 @@ import { usePathname } from "next/navigation";
 import { Icone } from "@/components/icone";
 import { cn } from "@/lib/utils";
 
-import { ITENS_NAVEGACAO, itemEstaAtivo } from "./itens-navegacao";
+import { itemEstaAtivo, type ItemNavegacao } from "./itens-navegacao";
 
 // Desktop (≥1024px): trilho branco de 64px, só ícones com tooltip. Item ativo = quadrado laranja
 // de raio 6px com ícone branco (DESIGN §5).
-export function TrilhoLateral() {
+export function TrilhoLateral({ itens }: { itens: ItemNavegacao[] }) {
   const pathname = usePathname();
 
   return (
@@ -18,7 +18,7 @@ export function TrilhoLateral() {
       aria-label="Principal"
       className="sticky top-14 hidden h-[calc(100dvh-3.5rem)] w-16 shrink-0 flex-col items-center gap-2 border-r border-sidebar-border bg-sidebar py-3 lg:flex"
     >
-      {ITENS_NAVEGACAO.map((item) => {
+      {itens.map((item) => {
         const ativo = itemEstaAtivo(item.href, pathname);
         return (
           <Link

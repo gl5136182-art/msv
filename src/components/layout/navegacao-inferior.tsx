@@ -6,11 +6,11 @@ import { usePathname } from "next/navigation";
 import { Icone } from "@/components/icone";
 import { cn } from "@/lib/utils";
 
-import { ITENS_NAVEGACAO, itemEstaAtivo } from "./itens-navegacao";
+import { itemEstaAtivo, type ItemNavegacao } from "./itens-navegacao";
 
 // Mobile (<1024px): navegação fixa no rodapé, ícone + rótulo de 11px, ativo em laranja.
 // Respeita a área segura do aparelho (DESIGN §5). O `viewport-fit=cover` está no layout raiz.
-export function NavegacaoInferior() {
+export function NavegacaoInferior({ itens }: { itens: ItemNavegacao[] }) {
   const pathname = usePathname();
 
   return (
@@ -19,7 +19,7 @@ export function NavegacaoInferior() {
       className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-sidebar pb-[env(safe-area-inset-bottom)] lg:hidden"
     >
       <ul className="flex">
-        {ITENS_NAVEGACAO.map((item) => {
+        {itens.map((item) => {
           const ativo = itemEstaAtivo(item.href, pathname);
           return (
             <li key={item.href} className="min-w-0 flex-1">

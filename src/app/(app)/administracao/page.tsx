@@ -1,9 +1,6 @@
-import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
-import { CabecalhoPagina } from "@/components/layout/cabecalho-pagina";
-
-export const metadata: Metadata = { title: "Administração" };
-
+// A área de administração abre na primeira seção.
 export default function Pagina() {
-  return <CabecalhoPagina titulo="Administração" />;
+  redirect("/administracao/uts");
 }
