@@ -1,0 +1,155 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* Sem dark mode no MVP: `dark:` dos componentes shadcn só vale com a classe .dark, que nunca é aplicada. */
+@custom-variant dark (&:is(.dark *));
+
+/* Tokens do DESIGN §2. Tema claro único. */
+:root {
+  color-scheme: light;
+
+  --primary: #ff460a;
+  --primary-foreground: #ffffff;
+  --topbar: #ff460a; /* em campanhas (ex.: Outubro Rosa), trocar só este token */
+  --topbar-foreground: #ffffff;
+  --foreground: #232323;
+  --muted-foreground: #5f5f5f;
+  --background: #f2f2f2;
+  --card: #ffffff;
+  --border: #e2e2e2;
+  --input: #d0d0d0;
+  --ring: #ff460a;
+  --destructive: #da291b;
+  --radius: 6px;
+
+  /* escala da primária */
+  --laranja-25: #ffd7cc;
+  --laranja-45: #ffa78b;
+  --laranja-145: #9c3022;
+  --grafite: #232323;
+
+  /* secundárias */
+  --azul: #19365b;
+  --petroleo: #416e7d;
+  --areia: #e3d9a3;
+  --malva: #9e708b;
+  --cinza: #e2e2e2;
+
+  /* status */
+  --status-ok: #337246;
+  --status-atencao: #e5cf61;
+  --status-erro: #da291b;
+  --status-neutro: #e2e2e2;
+
+  /* variáveis que os componentes shadcn esperam, mapeadas para os tokens acima */
+  --card-foreground: #232323;
+  --popover: #ffffff;
+  --popover-foreground: #232323;
+  --secondary: #ffffff;
+  --secondary-foreground: #232323;
+  --muted: #f7f7f7;
+  --accent: #f2f2f2;
+  --accent-foreground: #232323;
+
+  /* séries de gráfico na ordem do DESIGN §7 */
+  --chart-1: #ff460a;
+  --chart-2: #232323;
+  --chart-3: #9c3022;
+  --chart-4: #ffa78b;
+  --chart-5: #ffd7cc;
+
+  --sidebar: #ffffff;
+  --sidebar-foreground: #232323;
+  --sidebar-primary: #ff460a;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f2f2f2;
+  --sidebar-accent-foreground: #232323;
+  --sidebar-border: #e2e2e2;
+  --sidebar-ring: #ff460a;
+}
+
+@theme inline {
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-topbar: var(--topbar);
+  --color-topbar-foreground: var(--topbar-foreground);
+  --color-foreground: var(--foreground);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-background: var(--background);
+  --color-card: var(--card);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
+
+  --color-laranja-25: var(--laranja-25);
+  --color-laranja-45: var(--laranja-45);
+  --color-laranja-145: var(--laranja-145);
+  --color-grafite: var(--grafite);
+
+  --color-azul: var(--azul);
+  --color-petroleo: var(--petroleo);
+  --color-areia: var(--areia);
+  --color-malva: var(--malva);
+  --color-cinza: var(--cinza);
+
+  --color-status-ok: var(--status-ok);
+  --color-status-atencao: var(--status-atencao);
+  --color-status-erro: var(--status-erro);
+  --color-status-neutro: var(--status-neutro);
+
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Raio máximo de 6px (DESIGN §1): rounded-xl e maiores também resolvem para 6px */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: var(--radius);
+  --radius-lg: var(--radius);
+  --radius-xl: var(--radius);
+  --radius-2xl: var(--radius);
+  --radius-3xl: var(--radius);
+  --radius-4xl: var(--radius);
+
+  /* IBM Plex Sans em toda a interface; Arial só nos big numbers (DESIGN §3) */
+  --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-numeros: Arial, Helvetica, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  html {
+    @apply font-sans;
+  }
+}

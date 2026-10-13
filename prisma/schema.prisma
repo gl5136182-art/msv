@@ -1,0 +1,17 @@
+// Schema do MSV. Os models entram por fase (ver Docs/TODO.md); aqui só a base.
+//
+// Portabilidade para MySQL (CLAUDE.md): sem tipos nativos do Postgres, sem arrays,
+// IDs `String @id @default(cuid())`, tabelas/colunas em snake_case via @@map/@map.
+//
+// No Prisma 7 a URL do banco NÃO fica aqui:
+//   - migrations (CLI): `datasource.url` em prisma.config.ts, que usa DIRECT_URL (conexão direta);
+//   - runtime: o adapter `@prisma/adapter-pg` em src/infra/db.ts, que usa DATABASE_URL (pooler).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
