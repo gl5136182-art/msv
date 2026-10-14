@@ -3,8 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   formatarData,
   formatarDataHora,
+  formatarDataRelativa,
   formatarMoeda,
   formatarMoedaCompacta,
+  formatarMoedaResumida,
   formatarNumero,
   formatarQuantidade,
 } from "@/lib/formatacao";
@@ -20,6 +22,23 @@ describe("formatarMoeda", () => {
 
   it("formata valores negativos", () => {
     expect(formatarMoeda(-10)).toBe(`-R$${NBSP}10,00`);
+  });
+});
+
+describe("formatarMoedaResumida", () => {
+  it("abaixo de mil mostra o valor completo", () => {
+    expect(formatarMoedaResumida(950)).toBe(`R$${NBSP}950,00`);
+  });
+
+  it("abrevia milhares com 'mil' e uma casa", () => {
+    expect(formatarMoedaResumida(1_000)).toBe(`R$${NBSP}1${NBSP}mil`);
+    expect(formatarMoedaResumida(912_340)).toBe(`R$${NBSP}912,3${NBSP}mil`);
+    expect(formatarMoedaResumida(-12_500)).toBe(`-R$${NBSP}12,5${NBSP}mil`);
+  });
+
+  it("de 1 milhão em diante segue o formato compacto, sem '1.000 mil'", () => {
+    expect(formatarMoedaResumida(999_990)).toBe(`R$${NBSP}1${NBSP}mi`);
+    expect(formatarMoedaResumida(1_234_567)).toBe(`R$${NBSP}1,2${NBSP}mi`);
   });
 });
 
@@ -93,5 +112,28 @@ describe("formatarDataHora", () => {
 describe("formatarData", () => {
   it("mostra só a data no fuso de São Paulo", () => {
     expect(formatarData("2026-10-14T02:30:00Z")).toBe("13/10/2026");
+  });
+});
+
+describe("formatarDataRelativa", () => {
+  const agora = new Date("2026-10-14T15:00:00Z");
+
+  it.each([
+    ["2026-10-14T14:59:40Z", "agora"],
+    ["2026-10-14T14:55:00Z", "há 5 min"],
+    ["2026-10-14T14:01:00Z", "há 59 min"],
+    ["2026-10-14T12:00:00Z", "há 3 h"],
+    ["2026-10-13T15:00:00Z", "há 1 d"],
+    ["2026-10-08T15:00:00Z", "há 6 d"],
+  ])("%s → %s", (data, esperado) => {
+    expect(formatarDataRelativa(data, agora)).toBe(esperado);
+  });
+
+  it("depois de 7 dias mostra a data", () => {
+    expect(formatarDataRelativa("2026-10-07T15:00:00Z", agora)).toBe("07/10/2026");
+  });
+
+  it("data no futuro mostra a data em vez de um tempo negativo", () => {
+    expect(formatarDataRelativa("2026-10-15T15:00:00Z", agora)).toBe("15/10/2026");
   });
 });

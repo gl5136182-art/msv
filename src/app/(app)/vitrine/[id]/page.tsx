@@ -16,6 +16,7 @@ import {
   type OrigemDimensoes,
 } from "@/modules/itens/itens.schemas";
 
+import { BotaoSolicitar } from "./botao-solicitar";
 import { GaleriaFotos } from "./galeria-fotos";
 
 export const metadata: Metadata = { title: "Item da vitrine" };
@@ -105,10 +106,12 @@ export default async function PaginaItemDaVitrine({ params }: PageProps<"/vitrin
             </dl>
 
             {item.podeSolicitar ? (
-              // A solicitação em si entra na Fase 4 (modal "Solicitar", SPEC §6.4).
-              <Button disabled className="w-full">
-                Solicitar
-              </Button>
+              <BotaoSolicitar
+                itemId={item.id}
+                nome={item.nome}
+                quantidadeDisponivel={item.quantidadeDisponivel}
+                unidade={item.unidade}
+              />
             ) : item.daMinhaUt ? (
               <p className="text-xs text-muted-foreground">Este item é da sua UT.</p>
             ) : null}

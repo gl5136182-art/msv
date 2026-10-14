@@ -10,6 +10,11 @@ vi.mock("@/infra/storage", () => ({
   remover: vi.fn(async () => undefined),
 }));
 vi.mock("@/infra/db", () => ({ db: { $transaction: vi.fn() } }));
+vi.mock("@/modules/solicitacoes/solicitacoes.service", () => ({
+  recusarPendentesDoItemArquivado: vi.fn(async () => []),
+  notificarRecusasDoItemArquivado: vi.fn(async () => undefined),
+  contarPendentesPorItem: vi.fn(async () => ({}) as Record<string, number>),
+}));
 vi.mock("./itens.repository", () => ({
   buscarIdPorRm: vi.fn(),
   buscarPorId: vi.fn(),
@@ -23,6 +28,10 @@ vi.mock("./itens.repository", () => ({
 
 import { db } from "@/infra/db";
 import { criarUrlsUpload, obterUrls, remover } from "@/infra/storage";
+import {
+  contarPendentesPorItem,
+  recusarPendentesDoItemArquivado,
+} from "@/modules/solicitacoes/solicitacoes.service";
 
 import * as repository from "./itens.repository";
 import type { ItemDetalheVitrineRegistro, ItemRegistro, ItemVitrineRegistro } from "./itens.repository";
@@ -484,11 +493,30 @@ describe("alterarArquivamento", () => {
   it("arquivar tira o item da vitrine, mantendo as quantidades", async () => {
     repo.buscarPorId.mockResolvedValue(registro({ quantidadeTotal: 10, quantidadeDisponivel: 6 }));
     await alterarArquivamento(almoxarife, { id: "item1", arquivar: true });
-    expect(repo.atualizarQuantidade).toHaveBeenCalledWith("item1", {
-      quantidadeDisponivel: 6,
-      quantidadeTotal: 10,
-      status: "arquivado",
-    });
+    expect(repo.atualizarQuantidade).toHaveBeenCalledWith(
+      "item1",
+      { quantidadeDisponivel: 6, quantidadeTotal: 10, status: "arquivado" },
+      TX,
+    );
+  });
+
+  it("arquivar recusa as pendentes do item na mesma transação (regra 4)", async () => {
+    repo.buscarPorId.mockResolvedValue(registro());
+    await alterarArquivamento(almoxarife, { id: "item1", arquivar: true });
+    expect(recusarPendentesDoItemArquivado).toHaveBeenCalledWith("item1", TX);
+    expect(db.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("reativar não mexe nas solicitações", async () => {
+    repo.buscarPorId.mockResolvedValue(registro({ status: "arquivado", quantidadeDisponivel: 6 }));
+    await alterarArquivamento(almoxarife, { id: "item1", arquivar: false });
+    expect(recusarPendentesDoItemArquivado).not.toHaveBeenCalled();
+  });
+
+  it("não recusa as pendentes quando o item já estava arquivado", async () => {
+    repo.buscarPorId.mockResolvedValue(registro({ status: "arquivado" }));
+    await alterarArquivamento(almoxarife, { id: "item1", arquivar: true });
+    expect(recusarPendentesDoItemArquivado).not.toHaveBeenCalled();
   });
 
   it("reativar volta a disponível quando há unidades", async () => {
@@ -747,6 +775,16 @@ describe("listarItensDaUt", () => {
     expect(r).toHaveLength(2);
     expect(r[0].urlMiniatura).toBe(`https://dl/${FOTO.chaveThumb}`);
     expect(r[1].urlMiniatura).toBeNull();
+  });
+
+  it("informa quantas solicitações pendentes cada item tem", async () => {
+    repo.listarPorUt.mockResolvedValue([registro(), registro({ id: "item2", fotos: [] })]);
+    vi.mocked(contarPendentesPorItem).mockResolvedValue({ item1: 3 });
+
+    const r = await listarItensDaUt(almoxarife);
+
+    expect(contarPendentesPorItem).toHaveBeenCalledWith(["item1", "item2"]);
+    expect(r.map((item) => item.solicitacoesPendentes)).toEqual([3, 0]);
   });
 
   it("almoxarife sem UT não vê nada", async () => {

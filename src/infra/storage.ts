@@ -14,7 +14,9 @@ export type UrlUpload = { chave: string; url: string };
 /** Chave → URL assinada de leitura. Chaves sem arquivo (ou com erro) ficam de fora. */
 export type UrlsPorChave = Record<string, string>;
 
-const globalParaStorage = globalThis as unknown as { supabaseStorage?: SupabaseClient };
+class TransporteRealtimeInerte {}
+
+const globalParaStorage =globalThis as unknown as { supabaseStorage?: SupabaseClient };
 
 function obterBucket(): { cliente: SupabaseClient; bucket: string } {
   const url = process.env.SUPABASE_URL;
@@ -26,6 +28,9 @@ function obterBucket(): { cliente: SupabaseClient; bucket: string } {
   // Criado sob demanda: importar este módulo não exige as variáveis (ex.: `next build` sem .env).
   globalParaStorage.supabaseStorage ??= createClient(url, chave, {
     auth: { persistSession: false, autoRefreshToken: false },
+    // Só usamos o Storage. No Node 20 (sem WebSocket nativo) o client de Realtime lança erro já na
+    // criação; este transporte vazio evita isso e nunca é usado.
+    realtime: { transport: TransporteRealtimeInerte as never },
   });
   return { cliente: globalParaStorage.supabaseStorage, bucket };
 }

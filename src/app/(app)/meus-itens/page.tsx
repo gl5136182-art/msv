@@ -87,6 +87,13 @@ function LinhaItem({ item }: { item: ItemResumoDto }) {
             <span className="text-sm font-medium">{item.nome}</span>
             <Selo variante={status.variante}>{status.rotulo}</Selo>
             <Selo variante="contorno">{ROTULO_ESTADO[item.estado]}</Selo>
+            {item.solicitacoesPendentes > 0 ? (
+              <Selo variante="atencao">
+                {item.solicitacoesPendentes === 1
+                  ? "1 solicitação pendente"
+                  : `${formatarNumero(item.solicitacoesPendentes)} solicitações pendentes`}
+              </Selo>
+            ) : null}
           </div>
           <p className="truncate text-xs text-muted-foreground">
             {item.rm ? `RM ${item.rm} · ` : ""}

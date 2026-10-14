@@ -6,11 +6,12 @@ import { Icone } from "@/components/icone";
 import { LogoManserv } from "@/components/marca";
 
 import { MenuUsuarioServidor } from "./menu-usuario-servidor";
+import { SinoNotificacoes } from "./sino-notificacoes";
 
 // Barra superior na cor `--topbar` (DESIGN §5). Desktop: 56px, com busca ao centro.
 // A busca é um formulário GET para `/vitrine?q=…`; a vitrine lê o termo do parâmetro `q`.
-// O sino ainda é só a casca (contador na Fase 4). O menu do avatar lê a sessão, por isso fica
-// atrás de um Suspense.
+// O sino busca as notificações no cliente (polling de 60s). O menu do avatar lê a sessão, por
+// isso fica atrás de um Suspense.
 export function BarraSuperior() {
   return (
     <header className="sticky top-0 z-40 flex h-[52px] shrink-0 items-center gap-4 bg-topbar px-4 text-topbar-foreground lg:h-14">
@@ -46,13 +47,16 @@ export function BarraSuperior() {
       </Form>
 
       <div className="ml-auto flex shrink-0 items-center gap-1 lg:ml-0">
-        <button
-          type="button"
-          aria-label="Notificações"
-          className="relative flex size-10 items-center justify-center rounded-md outline-none transition-colors duration-150 hover:bg-white/15 focus-visible:outline-2 focus-visible:outline-white"
+        {/* `usePathname()` no sino é dado de runtime: fica atrás de Suspense (cacheComponents). */}
+        <Suspense
+          fallback={
+            <span className="flex size-10 items-center justify-center" aria-hidden>
+              <Icone nome="notifications" tamanho={24} />
+            </span>
+          }
         >
-          <Icone nome="notifications" tamanho={24} />
-        </button>
+          <SinoNotificacoes />
+        </Suspense>
         <Suspense
           fallback={
             <span className="flex size-10 items-center justify-center" aria-hidden>

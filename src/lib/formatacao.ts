@@ -43,6 +43,20 @@ export function formatarMoedaCompacta(valor: number): string {
   return `${sinal}R$${NBSP}${escalado}${NBSP}${faixa.sufixo}`;
 }
 
+/**
+ * Como `formatarMoedaCompacta`, mas abrevia também os milhares, para KPIs em cards estreitos:
+ * `912_300` → `R$ 912,3 mil`. Abaixo de 1.000 usa o valor completo.
+ */
+export function formatarMoedaResumida(valor: number): string {
+  // 999.950 já arredonda para "1.000 mil": nesse ponto a abreviação passa a ser "mi".
+  const modulo = Math.abs(valor);
+  if (modulo < 1e3) return formatarMoeda(valor);
+  if (modulo >= 999_950) return formatarMoedaCompacta(Math.sign(valor) * Math.max(modulo, 1e6));
+
+  const sinal = valor < 0 ? "-" : "";
+  return `${sinal}R$${NBSP}${formatarNumero(Math.abs(valor) / 1e3, 0, 1)}${NBSP}mil`;
+}
+
 /** `1547` → `1.547`; `1234.5` com casas 2 → `1.234,50`. */
 export function formatarNumero(valor: number, casasMin = 0, casasMax = casasMin): string {
   return new Intl.NumberFormat(LOCALE, {
@@ -74,4 +88,23 @@ function partes(data: Date | string): Record<string, string> {
   return Object.fromEntries(
     formatoDataHora.formatToParts(instante).map((parte) => [parte.type, parte.value]),
   );
+}
+
+/**
+ * Data relativa para listas curtas (notificações): "agora", "há 5 min", "há 3 h", "há 2 d".
+ * Passando de 7 dias (ou data no futuro por relógio desajustado) mostra `dd/mm/aaaa`.
+ */
+export function formatarDataRelativa(data: Date | string, agora: Date = new Date()): string {
+  const instante = typeof data === "string" ? new Date(data) : data;
+  const segundos = Math.floor((agora.getTime() - instante.getTime()) / 1000);
+
+  if (segundos < 0) return formatarData(instante);
+  if (segundos < 60) return "agora";
+  const minutos = Math.floor(segundos / 60);
+  if (minutos < 60) return `há ${minutos} min`;
+  const horas = Math.floor(minutos / 60);
+  if (horas < 24) return `há ${horas} h`;
+  const dias = Math.floor(horas / 24);
+  if (dias < 7) return `há ${dias} d`;
+  return formatarData(instante);
 }

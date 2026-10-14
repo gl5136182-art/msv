@@ -6,6 +6,12 @@ import { normalizar } from "@/lib/normalizar";
 import { exigirPapel } from "@/lib/permissoes";
 import type { UsuarioLogado } from "@/lib/usuario-logado";
 
+import {
+  contarPendentesPorItem,
+  notificarRecusasDoItemArquivado,
+  recusarPendentesDoItemArquivado,
+} from "@/modules/solicitacoes/solicitacoes.service";
+
 import * as repository from "./itens.repository";
 import type { DadosNovoItem, ItemRegistro } from "./itens.repository";
 import { calcularAjusteDeQuantidade, statusAposArquivamento } from "./itens.regras";
@@ -323,7 +329,7 @@ export async function ajustarQuantidadeDisponivel(
 /**
  * Arquiva ou reativa o item (SPEC §3, regra 4). Só o almoxarife da UT do item.
  * Arquivado sai da vitrine; reativar volta a `disponivel` (ou `esgotado`, se não há unidades).
- * A recusa automática das solicitações pendentes ao arquivar entra com as solicitações (Fase 4).
+ * Ao arquivar, as solicitações pendentes do item são recusadas na mesma transação.
  */
 export async function alterarArquivamento(
   usuario: UsuarioLogado,
@@ -335,13 +341,24 @@ export async function alterarArquivamento(
   const status = statusAposArquivamento(entrada.arquivar, atual.quantidadeDisponivel);
   if (status === atual.status) return paraDto(atual);
 
-  return paraDto(
-    await repository.atualizarQuantidade(atual.id, {
-      quantidadeDisponivel: atual.quantidadeDisponivel,
-      quantidadeTotal: atual.quantidadeTotal,
-      status,
-    }),
-  );
+  // Arquivar e recusar as pendentes (regra 4) valem juntos ou nenhum dos dois.
+  const { atualizado, recusadas } = await db.$transaction(async (tx) => {
+    const item = await repository.atualizarQuantidade(
+      atual.id,
+      {
+        quantidadeDisponivel: atual.quantidadeDisponivel,
+        quantidadeTotal: atual.quantidadeTotal,
+        status,
+      },
+      tx,
+    );
+    const recusadas = entrada.arquivar ? await recusarPendentesDoItemArquivado(atual.id, tx) : [];
+    return { atualizado: item, recusadas };
+  });
+
+  // Depois do commit: avisar os solicitantes nunca desfaz nem quebra o arquivamento.
+  await notificarRecusasDoItemArquivado(atual.nome, recusadas);
+  return paraDto(atualizado);
 }
 
 const MAXIMO_TERMOS_BUSCA = 8;
@@ -464,10 +481,14 @@ export async function listarItensDaUt(usuario: UsuarioLogado): Promise<ItemResum
 
   const itens = (await repository.listarPorUt(usuario.utId)).map(paraDto);
   const capas = itens.map((item) => item.fotos[0]?.chaveThumb).filter((chave): chave is string => Boolean(chave));
-  const urls = await obterUrls(capas, VALIDADE_URLS_SEG);
+  const [urls, pendentes] = await Promise.all([
+    obterUrls(capas, VALIDADE_URLS_SEG),
+    contarPendentesPorItem(itens.map((item) => item.id)),
+  ]);
 
   return itens.map((item) => ({
     ...item,
     urlMiniatura: (item.fotos[0] && urls[item.fotos[0].chaveThumb]) || null,
+    solicitacoesPendentes: pendentes[item.id] ?? 0,
   }));
 }

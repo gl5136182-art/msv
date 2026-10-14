@@ -313,8 +313,11 @@ export type ItemDto = {
 /** Item para a tela de edição: inclui as URLs assinadas das miniaturas, por chave da miniatura. */
 export type ItemParaEdicaoDto = ItemDto & { previas: Record<string, string> };
 
-/** Linha da lista "Meus itens": o item mais a URL assinada da miniatura da capa. */
-export type ItemResumoDto = ItemDto & { urlMiniatura: string | null };
+/**
+ * Linha da lista "Meus itens": o item, a URL assinada da miniatura da capa e quantas
+ * solicitações pendentes ele tem (SPEC §6.1).
+ */
+export type ItemResumoDto = ItemDto & { urlMiniatura: string | null; solicitacoesPendentes: number };
 
 // ---------------------------------------------------------------------------------------
 // Vitrine (SPEC §6.3)

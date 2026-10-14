@@ -89,6 +89,18 @@ enum DimensoesOrigem {
   @@map("dimensoes_origem")
 }
 
+/// Ciclo da solicitação (SPEC §3, "Status"):
+/// pendente → aceita | recusada | cancelada; aceita → concluida | cancelada.
+enum StatusSolicitacao {
+  pendente
+  aceita
+  recusada
+  cancelada
+  concluida
+
+  @@map("status_solicitacao")
+}
+
 // ---------------------------------------------------------------------------------------
 // UT (SPEC §5, §6.0)
 // ---------------------------------------------------------------------------------------
@@ -103,8 +115,9 @@ model Ut {
   ativo    Boolean  @default(true)
   criadoEm DateTime @default(now()) @map("criado_em")
 
-  usuarios Usuario[]
-  itens    Item[]
+  usuarios     Usuario[]
+  itens        Item[]
+  solicitacoes Solicitacao[]
 
   @@map("ut")
 }
@@ -132,11 +145,11 @@ model Item {
   estado    Estado
   unidade   Unidade
 
-  quantidadeTotal        Int     @map("quantidade_total")
+  quantidadeTotal        Int      @map("quantidade_total")
   /// Nunca fica negativa. Chegando a 0 o item vira `esgotado` (SPEC §3, regras 2 e 3).
-  quantidadeDisponivel   Int     @map("quantidade_disponivel")
+  quantidadeDisponivel   Int      @map("quantidade_disponivel")
   /// R$ de um item novo. Sempre digitado pelo almoxarife, nunca vem da IA.
-  valorUnitarioReposicao Decimal @map("valor_unitario_reposicao") @db.Decimal(14, 2)
+  valorUnitarioReposicao Decimal  @map("valor_unitario_reposicao") @db.Decimal(14, 2)
   /// R$ por mês. Só existe para `categoria = ativo` (obrigatório nesse caso).
   valorDepreciacaoMensal Decimal? @map("valor_depreciacao_mensal") @db.Decimal(14, 2)
 
@@ -164,9 +177,10 @@ model Item {
   criadoEm     DateTime   @default(now()) @map("criado_em")
   atualizadoEm DateTime   @updatedAt @map("atualizado_em")
 
-  ut        Ut         @relation(fields: [utId], references: [id])
-  criadoPor Usuario    @relation("ItensCriados", fields: [criadoPorId], references: [id])
-  fotos     ItemFoto[]
+  ut           Ut            @relation(fields: [utId], references: [id])
+  criadoPor    Usuario       @relation("ItensCriados", fields: [criadoPorId], references: [id])
+  fotos        ItemFoto[]
+  solicitacoes Solicitacao[]
 
   @@index([status, utId])
   @@index([categoria])
@@ -188,6 +202,71 @@ model ItemFoto {
 
   @@index([itemId])
   @@map("item_foto")
+}
+
+// ---------------------------------------------------------------------------------------
+// Solicitações e notificações (SPEC §3 regras 5 a 13, §5, §6.4)
+// ---------------------------------------------------------------------------------------
+
+model Solicitacao {
+  id            String @id @default(cuid())
+  itemId        String @map("item_id")
+  solicitanteId String @map("solicitante_id")
+  /// UT de quem pede (o destino do item). A UT de origem é `item.utId`.
+  utDestinoId   String @map("ut_destino_id")
+
+  quantidade Int
+  observacao String? @db.VarChar(500)
+
+  status StatusSolicitacao @default(pendente)
+
+  /// Valor de reposição do item no momento do aceite (SPEC §3, regra 8). Nulo até aceitar.
+  valorUnitarioSnapshot Decimal? @map("valor_unitario_snapshot") @db.Decimal(14, 2)
+  /// Obrigatório ao recusar (inclusive nas recusas automáticas).
+  motivoRecusa          String?  @map("motivo_recusa") @db.VarChar(500)
+  /// Pago pela UT de destino, informado ao concluir (SPEC §3, regra 10).
+  custoFrete            Decimal  @default(0) @map("custo_frete") @db.Decimal(14, 2)
+
+  /// Nulos nas recusas e cancelamentos automáticos (item arquivado ou esgotado, UT desativada).
+  respondidaPorId String?   @map("respondida_por_id")
+  respondidaEm    DateTime? @map("respondida_em")
+  concluidaPorId  String?   @map("concluida_por_id")
+  concluidaEm     DateTime? @map("concluida_em")
+  canceladaPorId  String?   @map("cancelada_por_id")
+  canceladaEm     DateTime? @map("cancelada_em")
+
+  criadoEm DateTime @default(now()) @map("criado_em")
+
+  item          Item     @relation(fields: [itemId], references: [id])
+  solicitante   Usuario  @relation("SolicitacoesFeitas", fields: [solicitanteId], references: [id])
+  utDestino     Ut       @relation(fields: [utDestinoId], references: [id])
+  respondidaPor Usuario? @relation("SolicitacoesRespondidas", fields: [respondidaPorId], references: [id])
+  concluidaPor  Usuario? @relation("SolicitacoesConcluidas", fields: [concluidaPorId], references: [id])
+  canceladaPor  Usuario? @relation("SolicitacoesCanceladas", fields: [canceladaPorId], references: [id])
+
+  @@index([itemId, status])
+  @@index([utDestinoId, status])
+  @@index([status, concluidaEm])
+  @@index([solicitanteId])
+  @@map("solicitacao")
+}
+
+model Notificacao {
+  id        String   @id @default(cuid())
+  usuarioId String   @map("usuario_id")
+  /// Código do evento (ex.: `solicitacao_nova`, `solicitacao_aceita`). Os valores ficam no
+  /// módulo `notificacoes`; texto e não enum para novos eventos não exigirem migration.
+  tipo      String   @db.VarChar(40)
+  mensagem  String   @db.VarChar(300)
+  /// Rota interna aberta ao clicar (ex.: `/solicitacoes`).
+  link      String   @db.VarChar(255)
+  lida      Boolean  @default(false)
+  criadoEm  DateTime @default(now()) @map("criado_em")
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId, lida])
+  @@map("notificacao")
 }
 
 // ---------------------------------------------------------------------------------------
@@ -222,6 +301,12 @@ model Usuario {
   sessions     Session[]
   accounts     Account[]
   itensCriados Item[]    @relation("ItensCriados")
+
+  solicitacoesFeitas      Solicitacao[] @relation("SolicitacoesFeitas")
+  solicitacoesRespondidas Solicitacao[] @relation("SolicitacoesRespondidas")
+  solicitacoesConcluidas  Solicitacao[] @relation("SolicitacoesConcluidas")
+  solicitacoesCanceladas  Solicitacao[] @relation("SolicitacoesCanceladas")
+  notificacoes            Notificacao[]
 
   @@index([utId])
   @@map("usuario")

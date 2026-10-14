@@ -4,6 +4,11 @@ import type { UsuarioLogado } from "@/lib/usuario-logado";
 
 import type { UtEntrada } from "./uts.schemas";
 
+vi.mock("@/infra/db", () => ({ db: { $transaction: vi.fn() } }));
+vi.mock("@/modules/solicitacoes/solicitacoes.service", () => ({
+  cancelarPendentesDaUtDesativada: vi.fn(async () => []),
+  notificarCancelamentosDaUtDesativada: vi.fn(async () => undefined),
+}));
 vi.mock("./uts.repository", () => ({
   listar: vi.fn(),
   listarAtivas: vi.fn(),
@@ -13,6 +18,9 @@ vi.mock("./uts.repository", () => ({
   atualizar: vi.fn(),
   definirAtivo: vi.fn(),
 }));
+
+import { db } from "@/infra/db";
+import { cancelarPendentesDaUtDesativada } from "@/modules/solicitacoes/solicitacoes.service";
 
 import * as repository from "./uts.repository";
 import type { UtRegistro } from "./uts.repository";
@@ -55,8 +63,11 @@ function ut(parcial: Partial<UtRegistro> = {}): UtRegistro {
 
 const entrada: UtEntrada = { codigo: "06.00.0171.256", nome: "BASE OPERACIONAL PARADAS", cidade: "Uberaba", uf: "MG" };
 
+const TX = { tx: true };
+
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.mocked(db.$transaction).mockImplementation((async (fn: (tx: unknown) => unknown) => fn(TX)) as never);
 });
 
 describe("permissões: só admin administra UTs", () => {
@@ -195,8 +206,26 @@ describe("alterarStatusUt", () => {
 
     const desativada = await alterarStatusUt(admin, { id: "ut1", ativo: false });
 
-    expect(repo.definirAtivo).toHaveBeenCalledWith("ut1", false);
+    expect(repo.definirAtivo).toHaveBeenCalledWith("ut1", false, TX);
     expect(desativada.ativo).toBe(false);
+  });
+
+  it("desativar cancela as solicitações pendentes da UT na mesma transação (regra 13)", async () => {
+    repo.buscarPorId.mockResolvedValue(ut());
+    repo.definirAtivo.mockResolvedValue(ut({ ativo: false }));
+
+    await alterarStatusUt(admin, { id: "ut1", ativo: false });
+
+    expect(cancelarPendentesDaUtDesativada).toHaveBeenCalledWith("ut1", TX);
+  });
+
+  it("reativar não cancela nada", async () => {
+    repo.buscarPorId.mockResolvedValue(ut({ ativo: false }));
+    repo.definirAtivo.mockResolvedValue(ut());
+
+    await alterarStatusUt(admin, { id: "ut1", ativo: true });
+
+    expect(cancelarPendentesDaUtDesativada).not.toHaveBeenCalled();
   });
 
   it("UT inexistente", async () => {
