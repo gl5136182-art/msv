@@ -14,6 +14,18 @@ import { filtrosDosParametros, hrefVitrine, temFiltros } from "./parametros";
 
 export const metadata: Metadata = { title: "Vitrine" };
 
+// Página atual, vizinhas, primeira e última; lacunas viram reticências (null).
+function paginasVisiveis(atual: number, total: number): (number | null)[] {
+  const numeros = new Set([1, total, atual - 1, atual, atual + 1]);
+  const ordenados = [...numeros].filter((n) => n >= 1 && n <= total).sort((a, b) => a - b);
+  const resultado: (number | null)[] = [];
+  ordenados.forEach((n, i) => {
+    if (i > 0 && n - ordenados[i - 1] > 1) resultado.push(null);
+    resultado.push(n);
+  });
+  return resultado;
+}
+
 type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
 
 export default async function PaginaVitrine({ searchParams }: Props) {
@@ -65,7 +77,7 @@ export default async function PaginaVitrine({ searchParams }: Props) {
           </ul>
 
           {vitrine.dados.totalPaginas > 1 ? (
-            <nav aria-label="Paginação" className="mt-6 flex items-center justify-between gap-3">
+            <nav aria-label="Paginação" className="mt-6 flex flex-wrap items-center justify-between gap-3">
               {vitrine.dados.pagina > 1 ? (
                 <Button asChild variant="secondary">
                   <Link href={hrefVitrine(filtros, { pagina: vitrine.dados.pagina - 1 })}>
@@ -77,9 +89,31 @@ export default async function PaginaVitrine({ searchParams }: Props) {
                 <span />
               )}
 
-              <span className="text-xs text-muted-foreground">
-                Página {vitrine.dados.pagina} de {vitrine.dados.totalPaginas}
-              </span>
+              <ul className="order-last flex w-full items-center justify-center gap-1 sm:order-none sm:w-auto">
+                {paginasVisiveis(vitrine.dados.pagina, vitrine.dados.totalPaginas).map((n, i) =>
+                  n === null ? (
+                    <li key={`gap-${i}`} aria-hidden className="px-1 text-sm text-muted-foreground">
+                      …
+                    </li>
+                  ) : (
+                    <li key={n}>
+                      <Button
+                        asChild
+                        variant={n === vitrine.dados.pagina ? "default" : "ghost"}
+                        size="icon"
+                      >
+                        <Link
+                          href={hrefVitrine(filtros, { pagina: n })}
+                          aria-label={`Página ${n}`}
+                          aria-current={n === vitrine.dados.pagina ? "page" : undefined}
+                        >
+                          {n}
+                        </Link>
+                      </Button>
+                    </li>
+                  ),
+                )}
+              </ul>
 
               {vitrine.dados.pagina < vitrine.dados.totalPaginas ? (
                 <Button asChild variant="secondary">
