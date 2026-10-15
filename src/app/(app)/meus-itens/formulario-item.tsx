@@ -407,7 +407,9 @@ function CorpoFormularioItem({ item, aoSalvar }: FormularioItemProps & { aoSalva
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-base font-medium">Dimensões e peso</h2>
-            <p className="text-xs text-muted-foreground">Meça o item ou peça uma recomendação da IA.</p>
+            <p className="text-xs text-muted-foreground">
+              Opcional. Meça o item ou peça uma recomendação da IA.
+            </p>
           </div>
           {/* Fica desabilitado até a recomendação da IA existir (Fase 5). */}
           <div className="flex flex-col items-start gap-1 sm:items-end">
@@ -419,7 +421,7 @@ function CorpoFormularioItem({ item, aoSalvar }: FormularioItemProps & { aoSalva
         </div>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Campo htmlFor="item-largura" rotulo="Largura (cm)" obrigatorio erro={errors.larguraCm?.message}>
+          <Campo htmlFor="item-largura" rotulo="Largura (cm)" erro={errors.larguraCm?.message}>
             <Input
               id="item-largura"
               inputMode="decimal"
@@ -428,7 +430,7 @@ function CorpoFormularioItem({ item, aoSalvar }: FormularioItemProps & { aoSalva
               {...register("larguraCm")}
             />
           </Campo>
-          <Campo htmlFor="item-altura" rotulo="Altura (cm)" obrigatorio erro={errors.alturaCm?.message}>
+          <Campo htmlFor="item-altura" rotulo="Altura (cm)" erro={errors.alturaCm?.message}>
             <Input
               id="item-altura"
               inputMode="decimal"
@@ -437,12 +439,7 @@ function CorpoFormularioItem({ item, aoSalvar }: FormularioItemProps & { aoSalva
               {...register("alturaCm")}
             />
           </Campo>
-          <Campo
-            htmlFor="item-profundidade"
-            rotulo="Profundidade (cm)"
-            obrigatorio
-            erro={errors.profundidadeCm?.message}
-          >
+          <Campo htmlFor="item-profundidade" rotulo="Profundidade (cm)" erro={errors.profundidadeCm?.message}>
             <Input
               id="item-profundidade"
               inputMode="decimal"
@@ -451,7 +448,7 @@ function CorpoFormularioItem({ item, aoSalvar }: FormularioItemProps & { aoSalva
               {...register("profundidadeCm")}
             />
           </Campo>
-          <Campo htmlFor="item-peso" rotulo="Peso (kg)" obrigatorio erro={errors.pesoKg?.message}>
+          <Campo htmlFor="item-peso" rotulo="Peso (kg)" erro={errors.pesoKg?.message}>
             <Input
               id="item-peso"
               inputMode="decimal"

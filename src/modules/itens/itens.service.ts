@@ -71,7 +71,8 @@ export function montarBuscaNormalizada(item: {
   nome: string;
   marca: string;
   modelo: string;
-  rm: string;
+  /** `null` nos itens importados do inventário que ainda não têm RM. */
+  rm: string | null;
   categoria: CategoriaItem;
   segmento: Segmento;
   descricao?: string | null;
@@ -81,7 +82,7 @@ export function montarBuscaNormalizada(item: {
       item.nome,
       item.marca,
       item.modelo,
-      item.rm,
+      item.rm ?? "",
       ROTULO_CATEGORIA[item.categoria],
       ROTULO_SEGMENTO[item.segmento],
       item.descricao ?? "",
@@ -147,10 +148,10 @@ export function paraDto(item: ItemRegistro): ItemDto {
     quantidadeDisponivel: item.quantidadeDisponivel,
     valorUnitarioReposicao: item.valorUnitarioReposicao.toNumber(),
     valorDepreciacaoMensal: decimalOuNulo(item.valorDepreciacaoMensal),
-    larguraCm: item.larguraCm.toNumber(),
-    alturaCm: item.alturaCm.toNumber(),
-    profundidadeCm: item.profundidadeCm.toNumber(),
-    pesoKg: item.pesoKg.toNumber(),
+    larguraCm: decimalOuNulo(item.larguraCm),
+    alturaCm: decimalOuNulo(item.alturaCm),
+    profundidadeCm: decimalOuNulo(item.profundidadeCm),
+    pesoKg: decimalOuNulo(item.pesoKg),
     lote: loteDoRegistro(item),
     dimensoesOrigem: item.dimensoesOrigem,
     status: item.status,
@@ -188,10 +189,10 @@ export async function criarItem(usuario: UsuarioLogado, entrada: ItemEntrada): P
       quantidade: entrada.quantidade,
       valorUnitarioReposicao: entrada.valorUnitarioReposicao,
       valorDepreciacaoMensal: depreciacaoDaEntrada(entrada),
-      larguraCm: entrada.larguraCm,
-      alturaCm: entrada.alturaCm,
-      profundidadeCm: entrada.profundidadeCm,
-      pesoKg: entrada.pesoKg,
+      larguraCm: entrada.larguraCm ?? null,
+      alturaCm: entrada.alturaCm ?? null,
+      profundidadeCm: entrada.profundidadeCm ?? null,
+      pesoKg: entrada.pesoKg ?? null,
       lote: loteDaEntrada(entrada),
       dimensoesOrigem: "manual",
       iaResposta: null,
@@ -279,10 +280,10 @@ export async function editarItem(usuario: UsuarioLogado, entrada: EditarItemEntr
           unidade: entrada.unidade,
           valorUnitarioReposicao: entrada.valorUnitarioReposicao,
           valorDepreciacaoMensal: depreciacaoDaEntrada(entrada),
-          larguraCm: entrada.larguraCm,
-          alturaCm: entrada.alturaCm,
-          profundidadeCm: entrada.profundidadeCm,
-          pesoKg: entrada.pesoKg,
+          larguraCm: entrada.larguraCm ?? null,
+          alturaCm: entrada.alturaCm ?? null,
+          profundidadeCm: entrada.profundidadeCm ?? null,
+          pesoKg: entrada.pesoKg ?? null,
           lote: loteDaEntrada(entrada),
           buscaNormalizada: montarBuscaNormalizada(entrada),
           fotos: entrada.fotos,
@@ -457,10 +458,10 @@ export async function obterItemDaVitrine(usuario: UsuarioLogado, id: string): Pr
     quantidadeDisponivel: item.quantidadeDisponivel,
     valorUnitarioReposicao: item.valorUnitarioReposicao.toNumber(),
     valorDepreciacaoMensal: decimalOuNulo(item.valorDepreciacaoMensal),
-    larguraCm: item.larguraCm.toNumber(),
-    alturaCm: item.alturaCm.toNumber(),
-    profundidadeCm: item.profundidadeCm.toNumber(),
-    pesoKg: item.pesoKg.toNumber(),
+    larguraCm: decimalOuNulo(item.larguraCm),
+    alturaCm: decimalOuNulo(item.alturaCm),
+    profundidadeCm: decimalOuNulo(item.profundidadeCm),
+    pesoKg: decimalOuNulo(item.pesoKg),
     lote: loteDoRegistro(item),
     dimensoesOrigem: item.dimensoesOrigem,
     criadoEm: item.criadoEm.toISOString(),

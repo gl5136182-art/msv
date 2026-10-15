@@ -33,10 +33,10 @@ export type DadosNovoItem = {
   valorUnitarioReposicao: number;
   /** Só para a categoria "Ativo"; `null` para "Material". */
   valorDepreciacaoMensal: number | null;
-  larguraCm: number;
-  alturaCm: number;
-  profundidadeCm: number;
-  pesoKg: number;
+  larguraCm: number | null;
+  alturaCm: number | null;
+  profundidadeCm: number | null;
+  pesoKg: number | null;
   /** As 4 medidas do lote juntas, ou `null`. */
   lote: { larguraCm: number; alturaCm: number; profundidadeCm: number; pesoKg: number } | null;
   dimensoesOrigem: OrigemDimensoes;

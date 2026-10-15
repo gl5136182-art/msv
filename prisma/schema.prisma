@@ -153,10 +153,11 @@ model Item {
   /// R$ por mês. Só existe para `categoria = ativo` (obrigatório nesse caso).
   valorDepreciacaoMensal Decimal? @map("valor_depreciacao_mensal") @db.Decimal(14, 2)
 
-  larguraCm      Decimal @map("largura_cm") @db.Decimal(10, 2)
-  alturaCm       Decimal @map("altura_cm") @db.Decimal(10, 2)
-  profundidadeCm Decimal @map("profundidade_cm") @db.Decimal(10, 2)
-  pesoKg         Decimal @map("peso_kg") @db.Decimal(10, 2)
+  /// Medidas e peso de uma unidade. Opcionais: itens vindos de planilha (inventário) entram sem elas.
+  larguraCm      Decimal? @map("largura_cm") @db.Decimal(10, 2)
+  alturaCm       Decimal? @map("altura_cm") @db.Decimal(10, 2)
+  profundidadeCm Decimal? @map("profundidade_cm") @db.Decimal(10, 2)
+  pesoKg         Decimal? @map("peso_kg") @db.Decimal(10, 2)
 
   /// Medidas e peso do lote inteiro (todas as unidades juntas), para orçar o frete.
   /// Tudo ou nada: os 4 preenchidos ou os 4 nulos (validado no service).

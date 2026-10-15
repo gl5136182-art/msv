@@ -320,6 +320,26 @@ describe("criarItem", () => {
     const dto = await criarItem(almoxarife, entrada);
     expect(dto).toMatchObject({ segmento: null, rm: null, valorDepreciacaoMensal: null, lote: null });
   });
+
+  it("sem dimensões nem peso na entrada, grava nulos (não undefined)", async () => {
+    const { larguraCm, alturaCm, profundidadeCm, pesoKg, ...semMedidas } = entrada;
+    void [larguraCm, alturaCm, profundidadeCm, pesoKg];
+    await criarItem(almoxarife, semMedidas);
+    expect(repo.criar.mock.calls[0][0]).toMatchObject({
+      larguraCm: null,
+      alturaCm: null,
+      profundidadeCm: null,
+      pesoKg: null,
+    });
+  });
+
+  it("item sem dimensões e peso vira nulos no DTO (não quebra em toNumber)", async () => {
+    repo.criar.mockResolvedValue(
+      registro({ larguraCm: null, alturaCm: null, profundidadeCm: null, pesoKg: null }),
+    );
+    const dto = await criarItem(almoxarife, entrada);
+    expect(dto).toMatchObject({ larguraCm: null, alturaCm: null, profundidadeCm: null, pesoKg: null });
+  });
 });
 
 describe("editarItem", () => {
@@ -737,6 +757,14 @@ describe("obterItemDaVitrine", () => {
     ]);
     expect(obterUrls).toHaveBeenCalledTimes(1);
     expect(vi.mocked(obterUrls).mock.calls[0][1]).toBe(3600);
+  });
+
+  it("item sem dimensões e peso (inventário importado) aparece com nulos, sem quebrar", async () => {
+    repo.buscarDaVitrine.mockResolvedValue(
+      detalhe({ larguraCm: null, alturaCm: null, profundidadeCm: null, pesoKg: null }),
+    );
+    const r = await obterItemDaVitrine(colaborador, "item1");
+    expect(r).toMatchObject({ larguraCm: null, alturaCm: null, profundidadeCm: null, pesoKg: null, lote: null });
   });
 
   it("item da própria UT não pode ser solicitado (regra 5)", async () => {
