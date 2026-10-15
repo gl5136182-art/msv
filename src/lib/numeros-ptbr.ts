@@ -53,6 +53,7 @@ export function lerMoeda(texto: string): number {
 }
 
 /** Número para exibir num campo decimal: `12.5` → `"12,5"`. */
-export function decimalParaCampo(valor: number): string {
+export function decimalParaCampo(valor: number | null): string {
+  if (valor === null) return "";
   return String(valor).replace(".", ",");
 }

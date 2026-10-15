@@ -78,7 +78,6 @@ describe("itemSchema", () => {
     ["quantidade vazia", { quantidade: "" }],
     ["valor vazio", { valorUnitarioReposicao: "" }],
     ["valor zero", { valorUnitarioReposicao: "R$ 0,00" }],
-    ["largura vazia", { larguraCm: "" }],
     ["altura zero", { alturaCm: "0" }],
     ["profundidade negativa", { profundidadeCm: "-3" }],
     ["peso inválido", { pesoKg: "abc" }],
@@ -95,11 +94,24 @@ describe("itemSchema", () => {
     }
   });
 
-  it("dimensões e peso são obrigatórios (SPEC §6.1, item 4)", () => {
+  it("dimensões e peso são opcionais, cada um por si (SPEC §6.1, item 4)", () => {
     for (const campo of ["larguraCm", "alturaCm", "profundidadeCm", "pesoKg"] as const) {
-      const resto = Object.fromEntries(Object.entries(valida).filter(([chave]) => chave !== campo));
-      expect(itemSchema.safeParse(resto).success).toBe(false);
+      const ausente = Object.fromEntries(Object.entries(valida).filter(([chave]) => chave !== campo));
+      expect(itemSchema.parse(ausente)[campo]).toBeUndefined();
+
+      expect(itemSchema.parse({ ...valida, [campo]: "" })[campo]).toBeUndefined();
+      expect(itemSchema.parse({ ...valida, [campo]: "   " })[campo]).toBeUndefined();
     }
+  });
+
+  it("aceita item sem nenhuma medida nem peso", () => {
+    const resultado = itemSchema.safeParse({ ...valida, larguraCm: "", alturaCm: "", profundidadeCm: "", pesoKg: "" });
+    expect(resultado.success).toBe(true);
+  });
+
+  it("uma medida preenchida continua sendo validada", () => {
+    expect(itemSchema.safeParse({ ...valida, larguraCm: "abc" }).success).toBe(false);
+    expect(itemSchema.safeParse({ ...valida, larguraCm: "0" }).success).toBe(false);
   });
 
   it("arredonda medidas e valores para 2 casas", () => {

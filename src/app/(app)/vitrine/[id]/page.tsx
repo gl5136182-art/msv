@@ -42,6 +42,9 @@ export default async function PaginaItemDaVitrine({ params }: PageProps<"/vitrin
   }
   const item = resultado.dados;
   const origem = ROTULO_ORIGEM[item.dimensoesOrigem];
+  const temMedidasPorUnidade = [item.larguraCm, item.alturaCm, item.profundidadeCm, item.pesoKg].some(
+    (medida) => medida !== null,
+  );
 
   return (
     <div className="mx-auto w-full max-w-5xl">
@@ -124,55 +127,74 @@ export default async function PaginaItemDaVitrine({ params }: PageProps<"/vitrin
             </section>
           ) : null}
 
-          <section className="rounded-md border border-border bg-card p-4">
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              <h2 className="text-base font-medium">Dimensões e peso</h2>
-              {origem ? <TagIa>{origem}</TagIa> : null}
-            </div>
-            <p className="mb-1 text-xs text-muted-foreground">Por unidade</p>
-            <MedidasEPeso
-              largura={item.larguraCm}
-              altura={item.alturaCm}
-              profundidade={item.profundidadeCm}
-              peso={item.pesoKg}
-            />
+          {temMedidasPorUnidade || item.lote ? (
+            <section className="rounded-md border border-border bg-card p-4">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <h2 className="text-base font-medium">Dimensões e peso</h2>
+                {origem && temMedidasPorUnidade ? <TagIa>{origem}</TagIa> : null}
+              </div>
+              {temMedidasPorUnidade ? (
+                <>
+                  <p className="mb-1 text-xs text-muted-foreground">Por unidade</p>
+                  <MedidasEPeso
+                    largura={item.larguraCm}
+                    altura={item.alturaCm}
+                    profundidade={item.profundidadeCm}
+                    peso={item.pesoKg}
+                  />
+                </>
+              ) : null}
 
-            {item.lote ? (
-              <>
-                <p className="mt-3 mb-1 text-xs text-muted-foreground">Lote inteiro</p>
-                <MedidasEPeso
-                  largura={item.lote.larguraCm}
-                  altura={item.lote.alturaCm}
-                  profundidade={item.lote.profundidadeCm}
-                  peso={item.lote.pesoKg}
-                />
-              </>
-            ) : null}
-          </section>
+              {item.lote ? (
+                <>
+                  <p
+                    className={`mb-1 text-xs text-muted-foreground ${temMedidasPorUnidade ? "mt-3" : ""}`}
+                  >
+                    Lote inteiro
+                  </p>
+                  <MedidasEPeso
+                    largura={item.lote.larguraCm}
+                    altura={item.lote.alturaCm}
+                    profundidade={item.lote.profundidadeCm}
+                    peso={item.lote.pesoKg}
+                  />
+                </>
+              ) : null}
+            </section>
+          ) : null}
         </div>
       </div>
     </div>
   );
 }
 
-function MedidasEPeso(props: { largura: number; altura: number; profundidade: number; peso: number }) {
+/** Medida não informada aparece como "—" (itens importados do inventário não têm medidas). */
+function MedidasEPeso(props: {
+  largura: number | null;
+  altura: number | null;
+  profundidade: number | null;
+  peso: number | null;
+}) {
+  const medida = (valor: number | null, unidade: string): string =>
+    valor === null ? "—" : `${formatarNumero(valor, 0, 2)} ${unidade}`;
+
   return (
     <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
       <div>
         <dt className="text-xs text-muted-foreground">Largura</dt>
-        <dd>{formatarNumero(props.largura, 0, 2)} cm</dd>
+        <dd>{medida(props.largura, "cm")}</dd>
       </div>
       <div>
         <dt className="text-xs text-muted-foreground">Altura</dt>
-        <dd>{formatarNumero(props.altura, 0, 2)} cm</dd>
+        <dd>{medida(props.altura, "cm")}</dd>
       </div>
       <div>
         <dt className="text-xs text-muted-foreground">Profundidade</dt>
-        <dd>{formatarNumero(props.profundidade, 0, 2)} cm</dd>
+        <dd>{medida(props.profundidade, "cm")}</dd>
       </div>
       <div>
         <dt className="text-xs text-muted-foreground">Peso</dt>
-        <dd>{formatarNumero(props.peso, 0, 2)} kg</dd>
+        <dd>{medida(props.peso, "kg")}</dd>
       </div>
     </dl>
   );

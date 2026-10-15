@@ -21,7 +21,7 @@ function svg(fundo: string): string {
 </svg>`;
 }
 
-async function enviar(url: string, arquivo: Buffer): Promise<void> {
+export async function enviar(url: string, arquivo: Buffer): Promise<void> {
   const resposta = await fetch(url, {
     method: "PUT",
     headers: { "Content-Type": "image/jpeg" },
@@ -32,14 +32,20 @@ async function enviar(url: string, arquivo: Buffer): Promise<void> {
   }
 }
 
+/** Foto genérica sobre o fundo `fundo`: principal 800×600 e miniatura 400×300, em JPEG. */
+export async function gerarFotoGenerica(fundo: string): Promise<{ principal: Buffer; miniatura: Buffer }> {
+  const base = sharp(Buffer.from(svg(fundo)));
+  const principal = await base.clone().jpeg({ quality: 80 }).toBuffer();
+  const miniatura = await base.clone().resize(400, 300).jpeg({ quality: 70 }).toBuffer();
+  return { principal, miniatura };
+}
+
 /** Gera e envia `quantidade` fotos genéricas (principal 800×600 e miniatura 400×300). */
 export async function enviarFotosGenericas(quantidade: number, agora: Date): Promise<ChavesFoto[]> {
   const fotos: ChavesFoto[] = [];
 
   for (let i = 0; i < quantidade; i++) {
-    const base = sharp(Buffer.from(svg(FUNDOS[i % FUNDOS.length])));
-    const principal = await base.clone().jpeg({ quality: 80 }).toBuffer();
-    const miniatura = await base.clone().resize(400, 300).jpeg({ quality: 70 }).toBuffer();
+    const { principal, miniatura } = await gerarFotoGenerica(FUNDOS[i % FUNDOS.length]);
 
     const chaves = gerarChavesFoto(agora);
     const [urlPrincipal, urlMiniatura] = await criarUrlsUpload([chaves.chave, chaves.chaveThumb]);

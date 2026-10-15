@@ -164,10 +164,11 @@ const itemBaseSchema = z.object({
   unidade: z.enum(UNIDADES, "Selecione a unidade."),
   quantidade,
   valorUnitarioReposicao: moeda("Informe o valor de reposição."),
-  larguraCm: medida("Informe a largura em cm."),
-  alturaCm: medida("Informe a altura em cm."),
-  profundidadeCm: medida("Informe a profundidade em cm."),
-  pesoKg: medida("Informe o peso em kg."),
+  // Medidas e peso de uma unidade: opcionais, cada uma por si (o inventário importado não as traz).
+  larguraCm: opcional(medida("Informe a largura em cm.")),
+  alturaCm: opcional(medida("Informe a altura em cm.")),
+  profundidadeCm: opcional(medida("Informe a profundidade em cm.")),
+  pesoKg: opcional(medida("Informe o peso em kg.")),
   // Lote inteiro (todas as unidades juntas), para orçar o frete: tudo ou nada (ver `refinarItem`).
   larguraLoteCm: opcional(medida("Informe a largura do lote em cm.")),
   alturaLoteCm: opcional(medida("Informe a altura do lote em cm.")),
@@ -298,10 +299,11 @@ export type ItemDto = {
   valorUnitarioReposicao: number;
   /** R$ por mês; só para a categoria "Ativo". */
   valorDepreciacaoMensal: number | null;
-  larguraCm: number;
-  alturaCm: number;
-  profundidadeCm: number;
-  pesoKg: number;
+  /** Medidas e peso de uma unidade; `null` quando não informados. */
+  larguraCm: number | null;
+  alturaCm: number | null;
+  profundidadeCm: number | null;
+  pesoKg: number | null;
   /** Medidas e peso do lote: os 4 preenchidos ou `null`. */
   lote: MedidasLoteDto | null;
   dimensoesOrigem: OrigemDimensoes;
@@ -392,10 +394,10 @@ export type ItemDetalheVitrineDto = {
   quantidadeDisponivel: number;
   valorUnitarioReposicao: number;
   valorDepreciacaoMensal: number | null;
-  larguraCm: number;
-  alturaCm: number;
-  profundidadeCm: number;
-  pesoKg: number;
+  larguraCm: number | null;
+  alturaCm: number | null;
+  profundidadeCm: number | null;
+  pesoKg: number | null;
   lote: MedidasLoteDto | null;
   dimensoesOrigem: OrigemDimensoes;
   criadoEm: string;
