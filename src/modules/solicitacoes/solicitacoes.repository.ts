@@ -246,20 +246,20 @@ export type SolicitacaoParaLista = Prisma.SolicitacaoGetPayload<{ include: typeo
 /** Limite de linhas por aba; a paginação fica para depois do MVP. */
 export const LIMITE_LISTA = 200;
 
-/** Enviadas pela UT (a UT de destino é a do solicitante), mais recentes primeiro. */
-export function listarEnviadasPelaUt(utId: string, cliente: ClienteDb = db): Promise<SolicitacaoParaLista[]> {
+/** Enviadas pelas UTs (a UT de destino é a do solicitante), mais recentes primeiro. */
+export function listarEnviadasPelasUts(utIds: string[], cliente: ClienteDb = db): Promise<SolicitacaoParaLista[]> {
   return cliente.solicitacao.findMany({
-    where: { utDestinoId: utId },
+    where: { utDestinoId: { in: utIds } },
     include: incluirParaLista,
     orderBy: [{ criadoEm: "desc" }, { id: "desc" }],
     take: LIMITE_LISTA,
   });
 }
 
-/** Pedidos aos itens da UT, mais recentes primeiro. */
-export function listarRecebidasPelaUt(utId: string, cliente: ClienteDb = db): Promise<SolicitacaoParaLista[]> {
+/** Pedidos aos itens das UTs, mais recentes primeiro. */
+export function listarRecebidasPelasUts(utIds: string[], cliente: ClienteDb = db): Promise<SolicitacaoParaLista[]> {
   return cliente.solicitacao.findMany({
-    where: { item: { utId } },
+    where: { item: { utId: { in: utIds } } },
     include: incluirParaLista,
     orderBy: [{ criadoEm: "desc" }, { id: "desc" }],
     take: LIMITE_LISTA,

@@ -114,6 +114,16 @@ export async function obterRotuloDaUt(utId: string | null): Promise<string | nul
 }
 
 /**
+ * Para outros módulos (ex.: vitrine): as UTs ativas entre `ids`, na mesma ordem de `ids`.
+ * Não confere permissão: quem chama já sabe que os ids são do usuário.
+ */
+export async function listarUtsAtivasPorIds(ids: string[]): Promise<UtDto[]> {
+  if (ids.length === 0) return [];
+  const uts = await repository.listarAtivasPorIds(ids);
+  return ids.flatMap((id) => uts.filter((ut) => ut.id === id).map(paraDto));
+}
+
+/**
  * Para outros módulos (ex.: usuários): confere que a UT existe e está ativa. Os selects só
  * mostram UTs ativas, mas a regra precisa valer também no servidor (SPEC §7).
  */

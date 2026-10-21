@@ -22,6 +22,7 @@ vi.mock("./usuarios.repository", () => ({
   trocarHashDaSenha: vi.fn(),
   definirDeveTrocarSenha: vi.fn(),
   atualizarPerfil: vi.fn(),
+  definirUtsAdicionais: vi.fn(),
   definirAtivo: vi.fn(),
   revogarSessoes: vi.fn(),
 }));
@@ -53,6 +54,7 @@ const admin: UsuarioLogado = {
   email: "admin@manserv.com.br",
   papel: "admin",
   utId: null,
+  utsAdicionais: [],
   ativo: true,
   deveTrocarSenha: false,
 };
@@ -71,6 +73,7 @@ function registro(parcial: Partial<UsuarioRegistro> = {}): UsuarioRegistro {
     deveTrocarSenha: true,
     createdAt: new Date("2026-02-01T10:00:00Z"),
     ut: { nome: "BASE OPERACIONAL PARADAS", cidade: "Uberaba", uf: "MG" },
+    utsAdicionais: [],
     ...parcial,
   };
 }
@@ -82,6 +85,7 @@ const entradaCriar: CriarUsuarioEntrada = {
   telefone: null,
   papel: "almoxarife",
   utId: "ut1",
+  utsAdicionais: [],
 };
 
 beforeEach(() => {
@@ -98,7 +102,7 @@ describe("permissões: só admin administra usuários", () => {
   it.each([
     ["listarUsuarios", (u: UsuarioLogado) => listarUsuarios(u)],
     ["criarUsuario", (u: UsuarioLogado) => criarUsuario(u, entradaCriar)],
-    ["editarUsuario", (u: UsuarioLogado) => editarUsuario(u, { id: "u1", papel: "colaborador", utId: "ut1", telefone: null })],
+    ["editarUsuario", (u: UsuarioLogado) => editarUsuario(u, { id: "u1", papel: "colaborador", utId: "ut1", utsAdicionais: [], telefone: null })],
     ["redefinirSenha", (u: UsuarioLogado) => redefinirSenha(u, "u1")],
     ["alterarStatusUsuario", (u: UsuarioLogado) => alterarStatusUsuario(u, { id: "u1", ativo: false })],
   ])("%s: almoxarife não pode", async (_nome, chamar) => {
@@ -209,20 +213,39 @@ describe("editarUsuario", () => {
   it("altera papel, UT e telefone", async () => {
     repo.buscarPorId.mockResolvedValue(registro());
 
-    await editarUsuario(admin, { id: "u1", papel: "colaborador", utId: "ut2", telefone: "(34) 99999-0000" });
+    await editarUsuario(admin, { id: "u1", papel: "colaborador", utId: "ut2", utsAdicionais: [], telefone: "(34) 99999-0000" });
 
     expect(exigirUtAtiva).toHaveBeenCalledWith("ut2");
-    expect(repo.atualizarPerfil).toHaveBeenCalledWith("u1", {
-      papel: "colaborador",
-      utId: "ut2",
-      telefone: "(34) 99999-0000",
+    expect(repo.atualizarPerfil).toHaveBeenCalledWith(
+      "u1",
+      { papel: "colaborador", utId: "ut2", telefone: "(34) 99999-0000" },
+      TX,
+    );
+    expect(repo.definirUtsAdicionais).toHaveBeenCalledWith("u1", [], TX);
+  });
+
+  it("grava as UTs adicionais sem repetir e sem a principal, validando só as novas", async () => {
+    repo.buscarPorId.mockResolvedValue(
+      registro({ utsAdicionais: [{ ut: { id: "ut3", nome: "UT 3", cidade: "Uberaba", uf: "MG" } }] }),
+    );
+
+    await editarUsuario(admin, {
+      id: "u1",
+      papel: "almoxarife",
+      utId: "ut1",
+      utsAdicionais: ["ut3", "ut1", "ut4", "ut4"],
+      telefone: null,
     });
+
+    expect(exigirUtAtiva).toHaveBeenCalledTimes(1);
+    expect(exigirUtAtiva).toHaveBeenCalledWith("ut4");
+    expect(repo.definirUtsAdicionais).toHaveBeenCalledWith("u1", ["ut3", "ut4"], TX);
   });
 
   it("não revalida a UT quando ela não mudou (pode ter sido desativada depois)", async () => {
     repo.buscarPorId.mockResolvedValue(registro({ utId: "ut1" }));
 
-    await editarUsuario(admin, { id: "u1", papel: "colaborador", utId: "ut1", telefone: null });
+    await editarUsuario(admin, { id: "u1", papel: "colaborador", utId: "ut1", utsAdicionais: [], telefone: null });
 
     expect(exigirUtAtiva).not.toHaveBeenCalled();
     expect(repo.atualizarPerfil).toHaveBeenCalled();
@@ -232,7 +255,7 @@ describe("editarUsuario", () => {
     repo.buscarPorId.mockResolvedValue(null);
 
     await expect(
-      editarUsuario(admin, { id: "x", papel: "colaborador", utId: "ut1", telefone: null }),
+      editarUsuario(admin, { id: "x", papel: "colaborador", utId: "ut1", utsAdicionais: [], telefone: null }),
     ).rejects.toMatchObject({ codigo: "USUARIO_NAO_ENCONTRADO" });
   });
 });

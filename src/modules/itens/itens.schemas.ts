@@ -405,6 +405,11 @@ export type ItemDetalheVitrineDto = {
   daMinhaUt: boolean;
   /** Colaborador ou almoxarife de outra UT (SPEC §3, regra 5; o admin não solicita). */
   podeSolicitar: boolean;
+  /**
+   * UTs do usuário que podem receber o item (ativas e diferentes da UT do item), a principal
+   * primeiro. Com mais de uma, o solicitante escolhe o destino.
+   */
+  utsDestino: Array<{ id: string; rotulo: string }>;
   /** Fotos na ordem do cadastro (a primeira é a capa), com URL assinada da principal e da miniatura. */
   fotos: Array<{ urlPrincipal: string | null; urlMiniatura: string | null }>;
 };

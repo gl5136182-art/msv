@@ -3,6 +3,7 @@ import { Suspense, type ReactNode } from "react";
 
 import { CabecalhoPagina } from "@/components/layout/cabecalho-pagina";
 import { obterUsuarioLogado } from "@/infra/sessao";
+import { temPapel } from "@/lib/usuario-logado";
 
 import { NavegacaoAdmin } from "./navegacao-admin";
 
@@ -22,6 +23,6 @@ export default function LayoutAdministracao({ children }: { children: ReactNode 
 
 async function ApenasAdmin({ children }: { children: ReactNode }) {
   const usuario = await obterUsuarioLogado();
-  if (!usuario || usuario.papel !== "admin") notFound();
+  if (!usuario || !temPapel(usuario.papel, "admin")) notFound();
   return <>{children}</>;
 }

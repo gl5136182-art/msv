@@ -64,6 +64,16 @@ const utIdSchema = z
 
 const MENSAGEM_UT_OBRIGATORIA = "Selecione a UT. Só o administrador pode ficar sem UT.";
 
+export const LIMITE_UTS_ADICIONAIS = 50;
+
+// Outras UTs além da principal. Repetidas e a própria principal são descartadas no service.
+const utsAdicionaisSchema = z
+  .array(z.string().trim().min(1))
+  .max(LIMITE_UTS_ADICIONAIS, `Selecione no máximo ${LIMITE_UTS_ADICIONAIS} UTs adicionais.`)
+  .default([]);
+
+const MENSAGEM_ADICIONAIS_SEM_PRINCIPAL = "Selecione a UT principal antes das adicionais.";
+
 export const criarUsuarioSchema = z
   .object({
     nome: z
@@ -88,10 +98,15 @@ export const criarUsuarioSchema = z
     telefone: telefoneSchema,
     papel: papelSchema,
     utId: utIdSchema,
+    utsAdicionais: utsAdicionaisSchema,
   })
   .refine((dados) => dados.papel === "admin" || dados.utId !== null, {
     path: ["utId"],
     message: MENSAGEM_UT_OBRIGATORIA,
+  })
+  .refine((dados) => dados.utId !== null || dados.utsAdicionais.length === 0, {
+    path: ["utsAdicionais"],
+    message: MENSAGEM_ADICIONAIS_SEM_PRINCIPAL,
   });
 
 export type CriarUsuarioEntrada = z.output<typeof criarUsuarioSchema>;
@@ -104,10 +119,15 @@ export const editarUsuarioSchema = z
     telefone: telefoneSchema,
     papel: papelSchema,
     utId: utIdSchema,
+    utsAdicionais: utsAdicionaisSchema,
   })
   .refine((dados) => dados.papel === "admin" || dados.utId !== null, {
     path: ["utId"],
     message: MENSAGEM_UT_OBRIGATORIA,
+  })
+  .refine((dados) => dados.utId !== null || dados.utsAdicionais.length === 0, {
+    path: ["utsAdicionais"],
+    message: MENSAGEM_ADICIONAIS_SEM_PRINCIPAL,
   });
 
 export type EditarUsuarioEntrada = z.output<typeof editarUsuarioSchema>;
@@ -136,6 +156,8 @@ export type UsuarioAdminDto = {
   utId: string | null;
   /** "Nome da UT · Cidade/UF", ou `null` para admin sem UT. */
   utRotulo: string | null;
+  /** UTs além da principal, com o rótulo de cada uma. */
+  utsAdicionais: { id: string; rotulo: string }[];
   ativo: boolean;
   deveTrocarSenha: boolean;
   criadoEm: string;

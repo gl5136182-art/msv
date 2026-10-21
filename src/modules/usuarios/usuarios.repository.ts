@@ -33,6 +33,7 @@ export type UsuarioRegistro = {
   deveTrocarSenha: boolean;
   createdAt: Date;
   ut: { nome: string; cidade: string; uf: string } | null;
+  utsAdicionais: { ut: { id: string; nome: string; cidade: string; uf: string } }[];
 };
 
 export type NovoUsuario = {
@@ -57,6 +58,10 @@ const selecionarRegistro = {
   deveTrocarSenha: true,
   createdAt: true,
   ut: { select: { nome: true, cidade: true, uf: true } },
+  utsAdicionais: {
+    select: { ut: { select: { id: true, nome: true, cidade: true, uf: true } } },
+    orderBy: { criadoEm: "asc" },
+  },
 } as const;
 
 export function listar(cliente: ClienteDb = db): Promise<UsuarioRegistro[]> {
@@ -117,6 +122,17 @@ export async function atualizarPerfil(
   cliente: ClienteDb = db,
 ): Promise<void> {
   await cliente.usuario.update({ where: { id }, data: dados });
+}
+
+/** Troca as UTs adicionais do usuário pela lista informada (já sem a principal e sem repetidas). */
+export async function definirUtsAdicionais(usuarioId: string, utIds: string[], cliente: ClienteDb = db): Promise<void> {
+  await cliente.usuarioUtAdicional.deleteMany({ where: { usuarioId, utId: { notIn: utIds } } });
+  if (utIds.length > 0) {
+    await cliente.usuarioUtAdicional.createMany({
+      data: utIds.map((utId) => ({ usuarioId, utId })),
+      skipDuplicates: true,
+    });
+  }
 }
 
 export async function definirAtivo(id: string, ativo: boolean, cliente: ClienteDb = db): Promise<void> {

@@ -5,6 +5,7 @@ import type { Metadata } from "next";
 import { CabecalhoPagina } from "@/components/layout/cabecalho-pagina";
 import { Button } from "@/components/ui/button";
 import { obterUsuarioLogado } from "@/infra/sessao";
+import { temPapel } from "@/lib/usuario-logado";
 import { listarSolicitacoes } from "@/modules/solicitacoes/solicitacoes.actions";
 import { ABAS_SOLICITACOES, type AbaSolicitacoes } from "@/modules/solicitacoes/solicitacoes.schemas";
 
@@ -24,10 +25,10 @@ function lerAba(valor: string | string[] | undefined): AbaSolicitacoes {
 export default async function PaginaSolicitacoes({ searchParams }: Props) {
   // Colaborador e almoxarife (DESIGN §5). A autorização de verdade é feita pelo service.
   const usuario = await obterUsuarioLogado();
-  if (!usuario || usuario.papel === "admin") notFound();
+  if (!usuario || !temPapel(usuario.papel, "colaborador", "almoxarife")) notFound();
 
   // "Recebidas" é só do almoxarife: para o colaborador, qualquer valor cai em "Minhas".
-  const abas: readonly AbaSolicitacoes[] = usuario.papel === "almoxarife" ? ABAS_SOLICITACOES : ["minhas"];
+  const abas: readonly AbaSolicitacoes[] = temPapel(usuario.papel, "almoxarife") ? ABAS_SOLICITACOES : ["minhas"];
   const pedida = lerAba((await searchParams).aba);
   const aba = abas.includes(pedida) ? pedida : "minhas";
 

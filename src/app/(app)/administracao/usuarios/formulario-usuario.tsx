@@ -30,7 +30,7 @@ type FormularioUsuarioProps = {
   aoCancelar: () => void;
 };
 
-// Um formulário para criar e editar. Na edição só papel, UT e telefone mudam (SPEC §6.0): nome,
+// Um formulário para criar e editar. Na edição só papel, UTs e telefone mudam (SPEC §6.0): nome,
 // e-mail e CPF aparecem somente leitura.
 export function FormularioUsuario({ usuario, uts, aoCriar, aoEditar, aoCancelar }: FormularioUsuarioProps) {
   const [erro, setErro] = useState<string | null>(null);
@@ -40,6 +40,7 @@ export function FormularioUsuario({ usuario, uts, aoCriar, aoEditar, aoCancelar 
     register,
     handleSubmit,
     setError,
+    setValue,
     control,
     formState: { errors, isSubmitting },
   } = useForm<CriarUsuarioFormulario, unknown, CriarUsuarioEntrada>({
@@ -51,15 +52,28 @@ export function FormularioUsuario({ usuario, uts, aoCriar, aoEditar, aoCancelar 
       telefone: usuario?.telefone ?? "",
       papel: usuario?.papel ?? "colaborador",
       utId: usuario?.utId ?? "",
+      utsAdicionais: usuario?.utsAdicionais.map((ut) => ut.id) ?? [],
     },
   });
 
   const papel = useWatch({ control, name: "papel" });
+  const utPrincipal = useWatch({ control, name: "utId" });
+  const utsAdicionais = useWatch({ control, name: "utsAdicionais" }) ?? [];
+
+  function alternarUtAdicional(utId: string, marcada: boolean) {
+    const proximas = marcada ? [...utsAdicionais, utId] : utsAdicionais.filter((id) => id !== utId);
+    setValue("utsAdicionais", proximas, { shouldDirty: true });
+  }
 
   // Na edição a UT atual pode ter sido desativada depois: ela continua selecionável.
   const opcoesDeUt: { id: string; rotulo: string }[] = uts.map((ut) => ({ id: ut.id, rotulo: ut.rotulo }));
   if (usuario?.utId && !opcoesDeUt.some((o) => o.id === usuario.utId)) {
     opcoesDeUt.unshift({ id: usuario.utId, rotulo: `${usuario.utRotulo ?? "UT"} (inativa)` });
+  }
+  // O mesmo para as adicionais já vinculadas.
+  const opcoesAdicionais = [...opcoesDeUt];
+  for (const ut of usuario?.utsAdicionais ?? []) {
+    if (!opcoesAdicionais.some((o) => o.id === ut.id)) opcoesAdicionais.push({ id: ut.id, rotulo: `${ut.rotulo} (inativa)` });
   }
 
   async function aoEnviar(dados: CriarUsuarioEntrada) {
@@ -70,6 +84,7 @@ export function FormularioUsuario({ usuario, uts, aoCriar, aoEditar, aoCancelar 
         id: usuario.id,
         papel: dados.papel,
         utId: dados.utId,
+        utsAdicionais: dados.utsAdicionais,
         telefone: dados.telefone,
       });
       if (!resultado.ok) return setErro(resultado.erro);
@@ -168,6 +183,36 @@ export function FormularioUsuario({ usuario, uts, aoCriar, aoEditar, aoCancelar 
           ))}
         </Seletor>
       </Campo>
+
+      {utPrincipal && opcoesAdicionais.some((ut) => ut.id !== utPrincipal) ? (
+        <fieldset className="flex flex-col gap-1.5">
+          <legend className="mb-1.5 text-xs font-medium text-foreground">UTs adicionais</legend>
+          <div className="flex max-h-48 flex-col gap-2 overflow-y-auto rounded-md border border-input bg-card p-3">
+            {opcoesAdicionais
+              .filter((ut) => ut.id !== utPrincipal)
+              .map((ut) => (
+                <label key={ut.id} className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="size-4 accent-primary"
+                    checked={utsAdicionais.includes(ut.id)}
+                    onChange={(e) => alternarUtAdicional(ut.id, e.target.checked)}
+                  />
+                  {ut.rotulo}
+                </label>
+              ))}
+          </div>
+          {errors.utsAdicionais?.message ? (
+            <p role="alert" className="text-xs text-destructive">
+              {errors.utsAdicionais.message}
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Opcional. O usuário passa a ter acesso também a estas UTs e escolhe o destino ao solicitar.
+            </p>
+          )}
+        </fieldset>
+      ) : null}
 
       {erro ? (
         <p role="alert" className="text-xs text-destructive">

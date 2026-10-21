@@ -21,8 +21,8 @@ vi.mock("./solicitacoes.repository", () => ({
   cancelarSeStatus: vi.fn(),
   concluirSeAceita: vi.fn(),
   cancelarPendentesDaUt: vi.fn(),
-  listarEnviadasPelaUt: vi.fn(),
-  listarRecebidasPelaUt: vi.fn(),
+  listarEnviadasPelasUts: vi.fn(),
+  listarRecebidasPelasUts: vi.fn(),
   devolverQuantidade: vi.fn(),
   atualizarTotalEStatusDoItem: vi.fn(),
 }));
@@ -60,6 +60,7 @@ const colaborador: UsuarioLogado = {
   email: "col@manserv.com.br",
   papel: "colaborador",
   utId: "ut2",
+  utsAdicionais: [],
   ativo: true,
   deveTrocarSenha: false,
 };
@@ -122,7 +123,7 @@ function comItem(
   };
 }
 
-const entrada: SolicitarEntrada = { itemId: "item1", quantidade: 2, observacao: undefined };
+const entrada: SolicitarEntrada = { itemId: "item1", utDestinoId: undefined, quantidade: 2, observacao: undefined };
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -215,6 +216,40 @@ describe("solicitar (SPEC §3, regras 5 e 6)", () => {
 
   it("usuário sem UT não solicita", async () => {
     await expect(solicitar({ ...colaborador, utId: null }, entrada)).rejects.toMatchObject({ codigo: "SEM_UT" });
+  });
+
+  describe("UT de destino", () => {
+    const comDuasUts: UsuarioLogado = { ...colaborador, utsAdicionais: ["ut3"] };
+
+    it("com uma só UT, o destino é ela", async () => {
+      await solicitar(colaborador, entrada);
+      expect(repo.criar).toHaveBeenCalledWith(expect.objectContaining({ utDestinoId: "ut2" }));
+    });
+
+    it("com mais de uma UT, exige a escolha", async () => {
+      await expect(solicitar(comDuasUts, entrada)).rejects.toMatchObject({ codigo: "UT_DESTINO_OBRIGATORIA" });
+      expect(repo.criar).not.toHaveBeenCalled();
+    });
+
+    it("grava a UT adicional escolhida", async () => {
+      await solicitar(comDuasUts, { ...entrada, utDestinoId: "ut3" });
+      expect(repo.criar).toHaveBeenCalledWith(expect.objectContaining({ utDestinoId: "ut3" }));
+    });
+
+    it("recusa UT a que o usuário não está vinculado", async () => {
+      await expect(solicitar(comDuasUts, { ...entrada, utDestinoId: "ut9" })).rejects.toMatchObject({
+        codigo: "UT_DESTINO_INVALIDA",
+      });
+      expect(repo.criar).not.toHaveBeenCalled();
+    });
+
+    it("pode pedir item de uma das suas UTs para outra delas, mas não para a mesma", async () => {
+      repo.buscarItemParaSolicitar.mockResolvedValue(item({ utId: "ut2" }));
+      await expect(solicitar(comDuasUts, { ...entrada, utDestinoId: "ut3" })).resolves.toBeDefined();
+      await expect(solicitar(comDuasUts, { ...entrada, utDestinoId: "ut2" })).rejects.toMatchObject({
+        codigo: "ITEM_DA_PROPRIA_UT",
+      });
+    });
   });
 });
 
@@ -666,7 +701,7 @@ describe("notificações das ações (SPEC §6.4)", () => {
   const agora = new Date("2026-10-14T15:00:00Z");
 
   it("solicitar avisa os almoxarifes da UT de origem", async () => {
-    await solicitar(colaborador, { itemId: "item1", quantidade: 2, observacao: undefined });
+    await solicitar(colaborador, { itemId: "item1", utDestinoId: undefined, quantidade: 2, observacao: undefined });
 
     expect(notificarEvento).toHaveBeenCalledWith({
       evento: "nova",
@@ -782,11 +817,11 @@ describe("listarSolicitacoes (SPEC §6.4)", () => {
   }
 
   it("minhas: busca pela UT do usuário e devolve as ações dele", async () => {
-    repo.listarEnviadasPelaUt.mockResolvedValue([paraLista()]);
+    repo.listarEnviadasPelasUts.mockResolvedValue([paraLista()]);
 
     const lista = await listarSolicitacoes(colaborador, "minhas");
 
-    expect(repo.listarEnviadasPelaUt).toHaveBeenCalledWith("ut2");
+    expect(repo.listarEnviadasPelasUts).toHaveBeenCalledWith(["ut2"]);
     expect(lista).toHaveLength(1);
     expect(lista[0]).toMatchObject({
       status: "pendente",
@@ -799,17 +834,17 @@ describe("listarSolicitacoes (SPEC §6.4)", () => {
   });
 
   it("recebidas: só almoxarife; o almoxarife de origem pode aceitar e recusar", async () => {
-    repo.listarRecebidasPelaUt.mockResolvedValue([paraLista()]);
+    repo.listarRecebidasPelasUts.mockResolvedValue([paraLista()]);
 
     const lista = await listarSolicitacoes(almoxarifeOrigem, "recebidas");
 
-    expect(repo.listarRecebidasPelaUt).toHaveBeenCalledWith("ut1");
+    expect(repo.listarRecebidasPelasUts).toHaveBeenCalledWith(["ut1"]);
     expect(lista[0].acoes).toMatchObject({ aceitar: true, recusar: true, cancelar: false });
     await expect(listarSolicitacoes(colaborador, "recebidas")).rejects.toMatchObject({ codigo: "SEM_PERMISSAO" });
   });
 
   it("aceita: usa o valor gravado ao aceitar e mostra os contatos de origem e destino", async () => {
-    repo.listarEnviadasPelaUt.mockResolvedValue([
+    repo.listarEnviadasPelasUts.mockResolvedValue([
       paraLista({
         status: "aceita",
         valorUnitarioSnapshot: new Prisma.Decimal("400"),
@@ -828,7 +863,7 @@ describe("listarSolicitacoes (SPEC §6.4)", () => {
   });
 
   it("os contatos só aparecem enquanto a solicitação está aceita", async () => {
-    repo.listarEnviadasPelaUt.mockResolvedValue([
+    repo.listarEnviadasPelasUts.mockResolvedValue([
       paraLista({ id: "a", status: "concluida" }),
       paraLista({ id: "b", status: "cancelada" }),
       paraLista({ id: "c", status: "recusada" }),
@@ -840,7 +875,7 @@ describe("listarSolicitacoes (SPEC §6.4)", () => {
   });
 
   it("concluída: informa o custo do frete", async () => {
-    repo.listarEnviadasPelaUt.mockResolvedValue([
+    repo.listarEnviadasPelasUts.mockResolvedValue([
       paraLista({ status: "concluida", custoFrete: new Prisma.Decimal("120.5") }),
     ]);
 
@@ -850,7 +885,7 @@ describe("listarSolicitacoes (SPEC §6.4)", () => {
   });
 
   it("pendentes primeiro, mantendo a ordem de cada grupo", async () => {
-    repo.listarEnviadasPelaUt.mockResolvedValue([
+    repo.listarEnviadasPelasUts.mockResolvedValue([
       paraLista({ id: "c1", status: "concluida" }),
       paraLista({ id: "p1", status: "pendente" }),
       paraLista({ id: "r1", status: "recusada" }),
@@ -864,7 +899,7 @@ describe("listarSolicitacoes (SPEC §6.4)", () => {
 
   it("usuário sem UT recebe lista vazia sem consultar o banco", async () => {
     await expect(listarSolicitacoes({ ...colaborador, utId: null }, "minhas")).resolves.toEqual([]);
-    expect(repo.listarEnviadasPelaUt).not.toHaveBeenCalled();
+    expect(repo.listarEnviadasPelasUts).not.toHaveBeenCalled();
   });
 
   it("admin não lista", async () => {

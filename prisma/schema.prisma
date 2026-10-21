@@ -24,6 +24,7 @@ enum Papel {
   colaborador
   almoxarife
   admin
+  moderador
 
   @@map("papel")
 }
@@ -115,9 +116,10 @@ model Ut {
   ativo    Boolean  @default(true)
   criadoEm DateTime @default(now()) @map("criado_em")
 
-  usuarios     Usuario[]
-  itens        Item[]
-  solicitacoes Solicitacao[]
+  usuarios           Usuario[]
+  usuariosAdicionais UsuarioUtAdicional[]
+  itens              Item[]
+  solicitacoes       Solicitacao[]
 
   @@map("ut")
 }
@@ -297,7 +299,9 @@ model Usuario {
   ativo           Boolean @default(true)
   deveTrocarSenha Boolean @default(true) @map("deve_trocar_senha")
 
-  ut Ut? @relation(fields: [utId], references: [id])
+  ut            Ut?                  @relation(fields: [utId], references: [id])
+  /// UTs a que o usuário também tem acesso, além da principal (`utId`).
+  utsAdicionais UsuarioUtAdicional[]
 
   sessions     Session[]
   accounts     Account[]
@@ -311,6 +315,21 @@ model Usuario {
 
   @@index([utId])
   @@map("usuario")
+}
+
+/// Vínculo do usuário com outras UTs além da principal (`usuario.utId`). Quem tem mais de uma UT
+/// escolhe a de destino ao solicitar; o almoxarife responde pelos itens de todas elas.
+model UsuarioUtAdicional {
+  usuarioId String   @map("usuario_id")
+  utId      String   @map("ut_id")
+  criadoEm  DateTime @default(now()) @map("criado_em")
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  ut      Ut      @relation(fields: [utId], references: [id])
+
+  @@id([usuarioId, utId])
+  @@index([utId])
+  @@map("usuario_ut_adicional")
 }
 
 model Session {

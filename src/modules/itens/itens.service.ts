@@ -4,7 +4,8 @@ import { gerarChavesFoto } from "@/lib/chaves-foto";
 import { ErroNegocio } from "@/lib/erro-negocio";
 import { normalizar } from "@/lib/normalizar";
 import { exigirPapel } from "@/lib/permissoes";
-import type { UsuarioLogado } from "@/lib/usuario-logado";
+import { temPapel, utsDoUsuario, vinculadoAUt, type UsuarioLogado } from "@/lib/usuario-logado";
+import { listarUtsAtivasPorIds } from "@/modules/uts/uts.service";
 
 import {
   contarPendentesPorItem,
@@ -233,7 +234,7 @@ async function buscarItemDaUt(usuario: UsuarioLogado, id: string): Promise<ItemR
   if (!item) {
     throw new ErroNegocio("ITEM_NAO_ENCONTRADO", "Item não encontrado.");
   }
-  if (item.utId !== usuario.utId) {
+  if (!vinculadoAUt(usuario, item.utId)) {
     throw new ErroNegocio("SEM_PERMISSAO", "Você só pode alterar itens da sua UT.");
   }
   return item;
@@ -416,7 +417,7 @@ export async function listarVitrine(usuario: UsuarioLogado, filtros: FiltrosVitr
       quantidadeDisponivel: item.quantidadeDisponivel,
       valorUnitarioReposicao: item.valorUnitarioReposicao.toNumber(),
       ut: item.ut,
-      daMinhaUt: usuario.utId !== null && item.utId === usuario.utId,
+      daMinhaUt: vinculadoAUt(usuario, item.utId),
       urlMiniatura: (item.fotos[0] && urls[item.fotos[0].chaveThumb]) || null,
     })),
     total,
@@ -442,7 +443,11 @@ export async function obterItemDaVitrine(usuario: UsuarioLogado, id: string): Pr
     item.fotos.flatMap((f) => [f.chave, f.chaveThumb]),
     VALIDADE_URLS_SEG,
   );
-  const daMinhaUt = usuario.utId !== null && item.utId === usuario.utId;
+  const daMinhaUt = vinculadoAUt(usuario, item.utId);
+  const podeSolicitarPeloPapel = temPapel(usuario.papel, "colaborador", "almoxarife");
+  const utsDestino = podeSolicitarPeloPapel
+    ? await listarUtsAtivasPorIds(utsDoUsuario(usuario).filter((utId) => utId !== item.utId))
+    : [];
 
   return {
     id: item.id,
@@ -467,7 +472,8 @@ export async function obterItemDaVitrine(usuario: UsuarioLogado, id: string): Pr
     criadoEm: item.criadoEm.toISOString(),
     ut: item.ut,
     daMinhaUt,
-    podeSolicitar: usuario.papel !== "admin" && !daMinhaUt,
+    podeSolicitar: utsDestino.length > 0,
+    utsDestino: utsDestino.map((ut) => ({ id: ut.id, rotulo: ut.rotulo })),
     fotos: item.fotos.map((f) => ({
       urlPrincipal: urls[f.chave] ?? null,
       urlMiniatura: urls[f.chaveThumb] ?? null,
@@ -475,12 +481,13 @@ export async function obterItemDaVitrine(usuario: UsuarioLogado, id: string): Pr
   };
 }
 
-/** "Meus itens": todos os itens da UT do almoxarife, com a miniatura da capa assinada em lote. */
+/** "Meus itens": todos os itens das UTs do almoxarife, com a miniatura da capa assinada em lote. */
 export async function listarItensDaUt(usuario: UsuarioLogado): Promise<ItemResumoDto[]> {
   exigirPapel(usuario, "almoxarife");
-  if (!usuario.utId) return [];
+  const uts = utsDoUsuario(usuario);
+  if (uts.length === 0) return [];
 
-  const itens = (await repository.listarPorUt(usuario.utId)).map(paraDto);
+  const itens = (await repository.listarPorUts(uts)).map(paraDto);
   const capas = itens.map((item) => item.fotos[0]?.chaveThumb).filter((chave): chave is string => Boolean(chave));
   const [urls, pendentes] = await Promise.all([
     obterUrls(capas, VALIDADE_URLS_SEG),

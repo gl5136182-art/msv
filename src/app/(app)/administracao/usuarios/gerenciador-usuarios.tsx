@@ -173,7 +173,14 @@ export function GerenciadorUsuarios({ usuarios, uts, busca, meuId }: Gerenciador
                     </td>
                     <td className="px-4 tabular-nums">{usuario.cpf}</td>
                     <td className="px-4">{ROTULO_PAPEL[usuario.papel]}</td>
-                    <td className="px-4">{usuario.utRotulo ?? <span className="text-muted-foreground">Sem UT</span>}</td>
+                    <td className="px-4">
+                      <p>{usuario.utRotulo ?? <span className="text-muted-foreground">Sem UT</span>}</p>
+                      {usuario.utsAdicionais.length > 0 ? (
+                        <p className="text-xs text-muted-foreground" title={usuario.utsAdicionais.map((ut) => ut.rotulo).join(", ")}>
+                          {rotuloUtsAdicionais(usuario.utsAdicionais.length)}
+                        </p>
+                      ) : null}
+                    </td>
                     <td className="px-4">
                       <div className="flex flex-wrap gap-1">
                         {usuario.ativo ? null : <Selo>Inativo</Selo>}
@@ -199,6 +206,7 @@ export function GerenciadorUsuarios({ usuarios, uts, busca, meuId }: Gerenciador
                     <p className="mt-0.5 text-xs break-all text-muted-foreground">{usuario.email}</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       {ROTULO_PAPEL[usuario.papel]} · {usuario.utRotulo ?? "Sem UT"}
+                      {usuario.utsAdicionais.length > 0 ? ` ${rotuloUtsAdicionais(usuario.utsAdicionais.length)}` : null}
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-1">
@@ -268,4 +276,8 @@ export function GerenciadorUsuarios({ usuarios, uts, busca, meuId }: Gerenciador
       />
     </div>
   );
+}
+
+function rotuloUtsAdicionais(quantidade: number): string {
+  return quantidade === 1 ? "+1 UT adicional" : `+${quantidade} UTs adicionais`;
 }

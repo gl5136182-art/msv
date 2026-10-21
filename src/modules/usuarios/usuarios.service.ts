@@ -138,10 +138,16 @@ export function paraDto(registro: UsuarioRegistro): UsuarioAdminDto {
     papel: registro.papel,
     utId: registro.utId,
     utRotulo: registro.ut ? rotuloUt(registro.ut) : null,
+    utsAdicionais: registro.utsAdicionais.map(({ ut }) => ({ id: ut.id, rotulo: rotuloUt(ut) })),
     ativo: registro.ativo,
     deveTrocarSenha: registro.deveTrocarSenha,
     criadoEm: registro.createdAt.toISOString(),
   };
+}
+
+/** UTs adicionais sem repetidas e sem a principal (que já vale por si). */
+function limparUtsAdicionais(utId: string | null, utsAdicionais: string[]): string[] {
+  return [...new Set(utsAdicionais)].filter((id) => id !== utId);
 }
 
 /** Todos os usuários (ativos e inativos), com busca sem acento por nome, e-mail, CPF e UT. */
@@ -158,7 +164,8 @@ export async function listarUsuarios(
   return registros
     .filter((r) => {
       if (!termo) return true;
-      const texto = normalizar(`${r.name} ${r.email} ${r.ut ? rotuloUt(r.ut) : ""}`);
+      const uts = [r.ut, ...r.utsAdicionais.map((a) => a.ut)].filter((ut) => ut !== null).map(rotuloUt);
+      const texto = normalizar(`${r.name} ${r.email} ${uts.join(" ")}`);
       return texto.includes(termo) || (termoCpf.length >= 3 && r.cpf.includes(termoCpf));
     })
     .map(paraDto);
@@ -175,6 +182,8 @@ export async function criarUsuario(
   exigirPapel(usuario, "admin");
 
   if (entrada.utId) await exigirUtAtiva(entrada.utId);
+  const utsAdicionais = limparUtsAdicionais(entrada.utId, entrada.utsAdicionais);
+  for (const utId of utsAdicionais) await exigirUtAtiva(utId);
   if (await repository.existeComEmail(entrada.email)) {
     throw new ErroNegocio("EMAIL_DUPLICADO", MENSAGEM_EMAIL_DUPLICADO);
   }
@@ -200,6 +209,7 @@ export async function criarUsuario(
         },
         tx,
       );
+      await repository.definirUtsAdicionais(id, utsAdicionais, tx);
       await repository.criarContaDeSenha({ id: gerarIdDeAuth(), usuarioId: id, hash }, tx);
     });
   } catch (erro) {
@@ -209,7 +219,7 @@ export async function criarUsuario(
   return { usuario: paraDto(await buscarOuFalhar(id)), senhaGerada };
 }
 
-/** Papel, UT e telefone (SPEC §6.0). Nome, e-mail e CPF não mudam. */
+/** Papel, UTs e telefone (SPEC §6.0). Nome, e-mail e CPF não mudam. */
 export async function editarUsuario(
   usuario: UsuarioLogado,
   entrada: EditarUsuarioEntrada,
@@ -219,11 +229,19 @@ export async function editarUsuario(
   const atual = await buscarOuFalhar(entrada.id);
   // Só valida a UT quando ela muda: o usuário pode continuar numa UT que depois foi desativada.
   if (entrada.utId && entrada.utId !== atual.utId) await exigirUtAtiva(entrada.utId);
+  const utsAdicionais = limparUtsAdicionais(entrada.utId, entrada.utsAdicionais);
+  const utsJaVinculadas = new Set([atual.utId, ...atual.utsAdicionais.map((a) => a.ut.id)]);
+  for (const utId of utsAdicionais) {
+    if (!utsJaVinculadas.has(utId)) await exigirUtAtiva(utId);
+  }
 
-  await repository.atualizarPerfil(entrada.id, {
-    papel: entrada.papel,
-    utId: entrada.utId,
-    telefone: entrada.telefone,
+  await db.$transaction(async (tx) => {
+    await repository.atualizarPerfil(
+      entrada.id,
+      { papel: entrada.papel, utId: entrada.utId, telefone: entrada.telefone },
+      tx,
+    );
+    await repository.definirUtsAdicionais(entrada.id, utsAdicionais, tx);
   });
   return paraDto(await buscarOuFalhar(entrada.id));
 }

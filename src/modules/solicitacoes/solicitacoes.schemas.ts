@@ -26,9 +26,17 @@ const QUANTIDADE_MAXIMA = 1_000_000;
 
 const textoOuNumero = z.union([z.number(), z.string()]);
 
-/** Solicitar (§6.4): item, quantidade (a disponibilidade é conferida no service) e observação. */
+/**
+ * Solicitar (§6.4): item, UT de destino, quantidade (a disponibilidade é conferida no service) e
+ * observação. Sem UT de destino, vale a única UT do solicitante; com mais de uma, ela é obrigatória.
+ */
 export const solicitarSchema = z.object({
   itemId: z.string().min(1, "Item inválido."),
+  utDestinoId: z
+    .string()
+    .trim()
+    .optional()
+    .transform((v) => (v ? v : undefined)),
   quantidade: textoOuNumero
     .transform((v) => (typeof v === "number" ? v : v.trim() === "" ? Number.NaN : Number(v.replace(/\./g, ""))))
     .pipe(

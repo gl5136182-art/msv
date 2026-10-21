@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 
 import { CabecalhoPagina } from "@/components/layout/cabecalho-pagina";
 import { obterUsuarioLogado } from "@/infra/sessao";
+import { temPapel } from "@/lib/usuario-logado";
 import { obterItemDaUt } from "@/modules/itens/itens.actions";
 
 import { AjusteQuantidade } from "../../ajuste-quantidade";
@@ -16,7 +17,7 @@ export default async function PaginaEditarItem({ params }: PageProps<"/meus-iten
 
   // Só o almoxarife edita (SPEC §2). A autorização de verdade é feita pelo service.
   const usuario = await obterUsuarioLogado();
-  if (!usuario || usuario.papel !== "almoxarife") notFound();
+  if (!usuario || !temPapel(usuario.papel, "almoxarife")) notFound();
 
   const item = await obterItemDaUt(id);
   // Item inexistente ou de outra UT: não revela a diferença.

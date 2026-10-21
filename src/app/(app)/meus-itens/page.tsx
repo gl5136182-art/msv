@@ -7,6 +7,7 @@ import { CabecalhoPagina } from "@/components/layout/cabecalho-pagina";
 import { Button } from "@/components/ui/button";
 import { Selo } from "@/components/ui/selo";
 import { obterUsuarioLogado } from "@/infra/sessao";
+import { temPapel } from "@/lib/usuario-logado";
 import { formatarMoeda, formatarNumero } from "@/lib/formatacao";
 import { listarItensDaUt } from "@/modules/itens/itens.actions";
 import {
@@ -38,7 +39,7 @@ function BotaoCadastrar() {
 export default async function PaginaMeusItens() {
   // Só o almoxarife tem "Meus itens" (SPEC §2). A autorização de verdade é feita pelo service.
   const usuario = await obterUsuarioLogado();
-  if (!usuario || usuario.papel !== "almoxarife") notFound();
+  if (!usuario || !temPapel(usuario.papel, "almoxarife")) notFound();
 
   const resultado = await listarItensDaUt();
 

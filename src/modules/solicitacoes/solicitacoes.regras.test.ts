@@ -10,11 +10,11 @@ const solicitacao = (status: StatusSolicitacao) => ({
   utOrigemId: "ut1",
 });
 
-const solicitante = { id: "col", papel: "colaborador" as const, utId: "ut2" };
-const almoxarifeOrigem = { id: "alm1", papel: "almoxarife" as const, utId: "ut1" };
-const almoxarifeDestino = { id: "alm2", papel: "almoxarife" as const, utId: "ut2" };
-const outroColaboradorDoDestino = { id: "col2", papel: "colaborador" as const, utId: "ut2" };
-const admin = { id: "adm", papel: "admin" as const, utId: null };
+const solicitante = { id: "col", papel: "colaborador" as const, utId: "ut2", utsAdicionais: [] };
+const almoxarifeOrigem = { id: "alm1", papel: "almoxarife" as const, utId: "ut1", utsAdicionais: [] };
+const almoxarifeDestino = { id: "alm2", papel: "almoxarife" as const, utId: "ut2", utsAdicionais: [] };
+const outroColaboradorDoDestino = { id: "col2", papel: "colaborador" as const, utId: "ut2", utsAdicionais: [] };
+const admin = { id: "adm", papel: "admin" as const, utId: null, utsAdicionais: [] };
 
 const nenhuma = { aceitar: false, recusar: false, cancelar: false, concluir: false };
 

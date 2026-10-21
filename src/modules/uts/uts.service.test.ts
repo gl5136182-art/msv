@@ -42,6 +42,7 @@ const admin: UsuarioLogado = {
   email: "admin@manserv.com.br",
   papel: "admin",
   utId: null,
+  utsAdicionais: [],
   ativo: true,
   deveTrocarSenha: false,
 };

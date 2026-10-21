@@ -10,6 +10,7 @@ const base: UsuarioLogado = {
   email: "maria@manserv.com.br",
   papel: "almoxarife",
   utId: "ut1",
+  utsAdicionais: [],
   ativo: true,
   deveTrocarSenha: false,
 };
@@ -24,6 +25,16 @@ describe("exigirPapel", () => {
     expect(() => exigirPapel({ ...base, papel: "colaborador" }, "admin")).toThrow(ErroNegocio);
     expect(() => exigirPapel({ ...base, papel: "colaborador" }, "admin")).toThrow(
       expect.objectContaining({ codigo: "SEM_PERMISSAO" }),
+    );
+  });
+
+  it("deixa o moderador passar em qualquer lista, mas não se estiver inativo", () => {
+    const moderador: UsuarioLogado = { ...base, papel: "moderador" };
+    expect(() => exigirPapel(moderador, "admin")).not.toThrow();
+    expect(() => exigirPapel(moderador, "almoxarife")).not.toThrow();
+    expect(() => exigirPapel(moderador, "colaborador")).not.toThrow();
+    expect(() => exigirPapel({ ...moderador, ativo: false }, "admin")).toThrow(
+      expect.objectContaining({ codigo: "USUARIO_INATIVO" }),
     );
   });
 

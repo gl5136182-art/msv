@@ -114,6 +114,7 @@ export default async function PaginaItemDaVitrine({ params }: PageProps<"/vitrin
                 nome={item.nome}
                 quantidadeDisponivel={item.quantidadeDisponivel}
                 unidade={item.unidade}
+                utsDestino={item.utsDestino}
               />
             ) : item.daMinhaUt ? (
               <p className="text-xs text-muted-foreground">Este item é da sua UT.</p>
