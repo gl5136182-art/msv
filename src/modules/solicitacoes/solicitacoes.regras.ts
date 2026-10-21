@@ -1,4 +1,4 @@
-import type { Papel } from "@/lib/usuario-logado";
+import { temPapel, vinculadoAUt, type Papel } from "@/lib/usuario-logado";
 
 import type { StatusSolicitacao } from "./solicitacoes.schemas";
 
@@ -13,13 +13,13 @@ export type AcoesDaSolicitacao = {
 };
 
 export function acoesPermitidas(
-  usuario: { id: string; papel: Papel; utId: string | null },
+  usuario: { id: string; papel: Papel; utId: string | null; utsAdicionais: string[] },
   solicitacao: { status: StatusSolicitacao; solicitanteId: string; utDestinoId: string; utOrigemId: string },
 ): AcoesDaSolicitacao {
   const ehSolicitante = solicitacao.solicitanteId === usuario.id;
-  const ehAlmoxarife = usuario.papel === "almoxarife";
-  const almoxarifeDeOrigem = ehAlmoxarife && usuario.utId === solicitacao.utOrigemId;
-  const almoxarifeDeDestino = ehAlmoxarife && usuario.utId === solicitacao.utDestinoId;
+  const ehAlmoxarife = temPapel(usuario.papel, "almoxarife");
+  const almoxarifeDeOrigem = ehAlmoxarife && vinculadoAUt(usuario, solicitacao.utOrigemId);
+  const almoxarifeDeDestino = ehAlmoxarife && vinculadoAUt(usuario, solicitacao.utDestinoId);
 
   const pendente = solicitacao.status === "pendente";
   const aceita = solicitacao.status === "aceita";

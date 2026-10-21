@@ -63,6 +63,7 @@ describe("criarUsuarioSchema", () => {
       telefone: "(34) 99999-0000",
       papel: "almoxarife",
       utId: "ut1",
+      utsAdicionais: [],
     });
   });
 

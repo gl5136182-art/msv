@@ -2,7 +2,7 @@ import { db, type ClienteDb } from "@/infra/db";
 import { obterUrls } from "@/infra/storage";
 import { ErroNegocio } from "@/lib/erro-negocio";
 import { exigirPapel } from "@/lib/permissoes";
-import type { UsuarioLogado } from "@/lib/usuario-logado";
+import { temPapel, utsDoUsuario, vinculadoAUt, type UsuarioLogado } from "@/lib/usuario-logado";
 import { calcularAjusteDeQuantidade } from "@/modules/itens/itens.regras";
 import { notificarEvento } from "@/modules/notificacoes/notificacoes.service";
 
@@ -36,14 +36,23 @@ function paraDto(solicitacao: SolicitacaoRegistro): SolicitacaoDto {
 }
 
 /**
- * Solicita um item (SPEC §3, regras 5 e 6). Colaborador ou almoxarife com UT; a UT de destino
- * vem da sessão. Não debita nada: várias pendentes podem disputar o mesmo item, e a
+ * Solicita um item (SPEC §3, regras 5 e 6). Colaborador ou almoxarife com UT. A UT de destino é
+ * uma das UTs do solicitante: a escolhida no modal ou, sem escolha, a única que ele tem. Não debita nada: várias pendentes podem disputar o mesmo item, e a
  * disponibilidade é conferida de novo ao aceitar.
  */
 export async function solicitar(usuario: UsuarioLogado, entrada: SolicitarEntrada): Promise<SolicitacaoDto> {
   exigirPapel(usuario, "colaborador", "almoxarife");
-  if (!usuario.utId) {
+  const uts = utsDoUsuario(usuario);
+  if (uts.length === 0) {
     throw new ErroNegocio("SEM_UT", "Seu usuário não está vinculado a uma UT. Fale com o administrador.");
+  }
+
+  const utDestinoId = entrada.utDestinoId ?? (uts.length === 1 ? uts[0] : undefined);
+  if (!utDestinoId) {
+    throw new ErroNegocio("UT_DESTINO_OBRIGATORIA", "Selecione a UT de destino.");
+  }
+  if (!uts.includes(utDestinoId)) {
+    throw new ErroNegocio("UT_DESTINO_INVALIDA", "Você não está vinculado a esta UT de destino.");
   }
 
   const item = await repository.buscarItemParaSolicitar(entrada.itemId);
@@ -51,9 +60,9 @@ export async function solicitar(usuario: UsuarioLogado, entrada: SolicitarEntrad
     throw new ErroNegocio("ITEM_NAO_ENCONTRADO", "Item não encontrado.");
   }
 
-  // Regra 5: nem da própria UT, nem de UT inativa.
-  if (item.utId === usuario.utId) {
-    throw new ErroNegocio("ITEM_DA_PROPRIA_UT", "Você não pode solicitar um item da sua própria UT.");
+  // Regra 5: nem para a própria UT do item, nem de UT inativa.
+  if (item.utId === utDestinoId) {
+    throw new ErroNegocio("ITEM_DA_PROPRIA_UT", "Você não pode solicitar um item para a UT em que ele já está.");
   }
   if (!item.ut.ativo) {
     throw new ErroNegocio("UT_INATIVA", "A UT deste item está inativa. Não é possível solicitá-lo.");
@@ -74,7 +83,7 @@ export async function solicitar(usuario: UsuarioLogado, entrada: SolicitarEntrad
   const criada = await repository.criar({
     itemId: item.id,
     solicitanteId: usuario.id,
-    utDestinoId: usuario.utId,
+    utDestinoId,
     quantidade: entrada.quantidade,
     observacao: entrada.observacao ?? null,
     status: "pendente",
@@ -119,7 +128,7 @@ async function carregarPendenteDaMinhaUt(
   if (!atual) {
     throw new ErroNegocio("SOLICITACAO_NAO_ENCONTRADA", "Solicitação não encontrada.");
   }
-  if (atual.item.utId !== usuario.utId) {
+  if (!vinculadoAUt(usuario, atual.item.utId)) {
     throw new ErroNegocio("SEM_PERMISSAO", "Somente o almoxarife da UT de origem pode responder a esta solicitação.");
   }
   if (atual.status !== "pendente") {
@@ -249,7 +258,7 @@ export async function cancelar(
     }
 
     const ehSolicitante = atual.solicitanteId === usuario.id;
-    const ehAlmoxarifeDeOrigem = usuario.papel === "almoxarife" && usuario.utId === atual.item.utId;
+    const ehAlmoxarifeDeOrigem = temPapel(usuario.papel, "almoxarife") && vinculadoAUt(usuario, atual.item.utId);
     if (!ehSolicitante && !ehAlmoxarifeDeOrigem) {
       throw new ErroNegocio("SEM_PERMISSAO", "Você não tem permissão para cancelar esta solicitação.");
     }
@@ -333,7 +342,7 @@ export async function concluir(
   }
 
   const ehSolicitante = atual.solicitanteId === usuario.id;
-  const ehAlmoxarifeDeDestino = usuario.papel === "almoxarife" && usuario.utId === atual.utDestinoId;
+  const ehAlmoxarifeDeDestino = temPapel(usuario.papel, "almoxarife") && vinculadoAUt(usuario, atual.utDestinoId);
   if (!ehSolicitante && !ehAlmoxarifeDeDestino) {
     throw new ErroNegocio(
       "SEM_PERMISSAO",
@@ -416,8 +425,8 @@ function pendentesPrimeiro(lista: SolicitacaoParaLista[]): SolicitacaoParaLista[
 
 /**
  * Lista da página Solicitações (SPEC §6.4):
- * - "minhas": enviadas pela UT do usuário (colaborador ou almoxarife);
- * - "recebidas": pedidos aos itens da UT do usuário (só almoxarife).
+ * - "minhas": enviadas pelas UTs do usuário (colaborador ou almoxarife);
+ * - "recebidas": pedidos aos itens das UTs do usuário (só almoxarife).
  * Cada linha traz as ações permitidas ao usuário e, se aceita, os contatos para o transporte.
  */
 export async function listarSolicitacoes(
@@ -426,12 +435,13 @@ export async function listarSolicitacoes(
 ): Promise<SolicitacaoListaDto[]> {
   if (aba === "recebidas") exigirPapel(usuario, "almoxarife");
   else exigirPapel(usuario, "colaborador", "almoxarife");
-  if (!usuario.utId) return [];
+  const uts = utsDoUsuario(usuario);
+  if (uts.length === 0) return [];
 
   const registros = pendentesPrimeiro(
     aba === "recebidas"
-      ? await repository.listarRecebidasPelaUt(usuario.utId)
-      : await repository.listarEnviadasPelaUt(usuario.utId),
+      ? await repository.listarRecebidasPelasUts(uts)
+      : await repository.listarEnviadasPelasUts(uts),
   );
 
   const capas = registros.map((s) => s.item.fotos[0]?.chaveThumb).filter((c): c is string => Boolean(c));

@@ -1,6 +1,6 @@
 import { exigirPapel } from "@/lib/permissoes";
 import { rotuloUt } from "@/lib/rotulo-ut";
-import type { UsuarioLogado } from "@/lib/usuario-logado";
+import { temPapel, type UsuarioLogado } from "@/lib/usuario-logado";
 
 import {
   calcularEconomia,
@@ -33,7 +33,7 @@ const MS_POR_DIA = 24 * 60 * 60 * 1000;
 export function resolverUtDoFiltro(usuario: UsuarioLogado, utId: string | undefined): string | null {
   if (utId === TODAS_AS_UTS) return null;
   if (utId) return utId;
-  return usuario.papel === "admin" ? null : usuario.utId;
+  return temPapel(usuario.papel, "admin") ? null : usuario.utId;
 }
 
 export async function obterDashboard(

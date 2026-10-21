@@ -28,7 +28,20 @@ import {
 } from "./inventario-xlsx";
 
 const UT_CODIGO = "06.00.0171.256";
-const TAMANHO_LOTE_UPLOAD = 40;
+const TAMANHO_LOTE = 5;
+const TENTATIVAS = 4;
+
+/** Repete a chamada com espera crescente: o Supabase recusa picos de conexão por alguns segundos. */
+async function comTentativas<T>(chamada: () => Promise<T>): Promise<T> {
+  for (let tentativa = 1; ; tentativa++) {
+    try {
+      return await chamada();
+    } catch (erro) {
+      if (tentativa >= TENTATIVAS) throw erro;
+      await new Promise((resolver) => setTimeout(resolver, 1000 * tentativa * tentativa));
+    }
+  }
+}
 
 /** Fundos da foto genérica por família (paleta do `demo-fotos.ts`). */
 const FUNDO_POR_FAMILIA: Record<FamiliaFoto, string> = {
@@ -152,30 +165,29 @@ async function importar(): Promise<void> {
       imagens.set(familia, await gerarFotoGenerica(FUNDO_POR_FAMILIA[familia]));
     }
 
-    const fotos = new Map<string, { chave: string; chaveThumb: string }>();
-    const enviadas: string[] = [];
-    try {
-      for (let inicio = 0; inicio < novos.length; inicio += TAMANHO_LOTE_UPLOAD) {
-        const lote = novos.slice(inicio, inicio + TAMANHO_LOTE_UPLOAD);
-        const chaves = lote.map(() => gerarChavesFoto(agora));
-        const urls = await criarUrlsUpload(chaves.flatMap((c) => [c.chave, c.chaveThumb]));
+    // Em lotes pequenos, cada um com suas fotos e sua gravação: o Storage do Supabase consulta o
+    // banco a cada URL assinada e recusa rajadas ("Too many connections"). Assim também uma falha
+    // no meio não perde o que já foi gravado: é só rodar de novo, que pula o que já existe.
+    let criados = 0;
+    for (let inicio = 0; inicio < novos.length; inicio += TAMANHO_LOTE) {
+      const lote = novos.slice(inicio, inicio + TAMANHO_LOTE);
+      const chaves = lote.map(() => gerarChavesFoto(agora));
+      const todasAsChaves = chaves.flatMap((c) => [c.chave, c.chaveThumb]);
 
-        await Promise.all(
-          lote.map(async (item, i) => {
-            const imagem = imagens.get(item.familia)!;
-            await enviar(urls[i * 2].url, imagem.principal);
-            await enviar(urls[i * 2 + 1].url, imagem.miniatura);
-            enviadas.push(chaves[i].chave, chaves[i].chaveThumb);
-            fotos.set(item.id, chaves[i]);
-          }),
-        );
-        console.log(`importar:inventario: fotos enviadas ${Math.min(inicio + lote.length, novos.length)}/${novos.length}`);
-      }
+      try {
+        const urls: Awaited<ReturnType<typeof criarUrlsUpload>> = [];
+        for (const chave of todasAsChaves) {
+          urls.push(...(await comTentativas(() => criarUrlsUpload([chave]))));
+        }
+        for (const [i, item] of lote.entries()) {
+          const imagem = imagens.get(item.familia)!;
+          await comTentativas(() => enviar(urls[i * 2].url, imagem.principal));
+          await comTentativas(() => enviar(urls[i * 2 + 1].url, imagem.miniatura));
+        }
 
-      await db.$transaction(
-        async (tx) => {
+        await db.$transaction(async (tx) => {
           await tx.item.createMany({
-            data: novos.map((i) => ({
+            data: lote.map((i) => ({
               id: i.id,
               utId: ut.id,
               criadoPorId: criador.id,
@@ -205,15 +217,19 @@ async function importar(): Promise<void> {
             })),
           });
           await tx.itemFoto.createMany({
-            data: novos.map((i) => ({ itemId: i.id, ordem: 0, ...fotos.get(i.id)! })),
+            data: lote.map((i, n) => ({ itemId: i.id, ordem: 0, ...chaves[n] })),
           });
-        },
-        { timeout: 120_000, maxWait: 30_000 },
-      );
-    } catch (erro) {
-      // Não deixa arquivo órfão se o banco recusar a carga.
-      if (enviadas.length > 0) await remover(enviadas).catch(() => undefined);
-      throw erro;
+        });
+      } catch (erro) {
+        // Não deixa arquivo órfão do lote que falhou; os lotes anteriores já estão gravados.
+        await remover(todasAsChaves).catch(() => undefined);
+        console.error(`importar:inventario: falhou no lote que começa no item ${inicio + 1}; ${criados} itens já gravados.`);
+        console.error('Rode o mesmo comando de novo para continuar de onde parou.');
+        throw erro;
+      }
+
+      criados += lote.length;
+      console.log(`importar:inventario: ${criados}/${novos.length} itens gravados`);
     }
 
     const valorNovos = novos.reduce((soma, i) => soma + i.quantidade * i.valorUnitarioReposicao, 0);

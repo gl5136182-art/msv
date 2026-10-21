@@ -186,10 +186,10 @@ export function buscarDaVitrine(id: string, cliente: ClienteDb = db): Promise<It
   });
 }
 
-/** Itens da UT (todos os status), do mais recente para o mais antigo. */
-export function listarPorUt(utId: string, cliente: ClienteDb = db): Promise<ItemRegistro[]> {
+/** Itens das UTs (todos os status), do mais recente para o mais antigo. */
+export function listarPorUts(utIds: string[], cliente: ClienteDb = db): Promise<ItemRegistro[]> {
   return cliente.item.findMany({
-    where: { utId },
+    where: { utId: { in: utIds } },
     include: incluir,
     orderBy: [{ criadoEm: "desc" }, { id: "desc" }],
   });

@@ -38,6 +38,10 @@ export function buscarPorId(id: string, cliente: ClienteDb = db): Promise<UtRegi
   return cliente.ut.findUnique({ where: { id }, select: selecionar });
 }
 
+export function listarAtivasPorIds(ids: string[], cliente: ClienteDb = db): Promise<UtRegistro[]> {
+  return cliente.ut.findMany({ where: { id: { in: ids }, ativo: true }, select: selecionar });
+}
+
 export function buscarPorCodigo(codigo: string, cliente: ClienteDb = db): Promise<UtRegistro | null> {
   return cliente.ut.findUnique({ where: { codigo }, select: selecionar });
 }

@@ -25,6 +25,7 @@ const colaborador: UsuarioLogado = {
   email: "col@manserv.com.br",
   papel: "colaborador",
   utId: "ut-a",
+  utsAdicionais: [],
   ativo: true,
   deveTrocarSenha: false,
 };

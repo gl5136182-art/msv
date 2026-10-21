@@ -31,6 +31,7 @@ describe("montarUsuarioLogado", () => {
       email: "maria@manserv.com.br",
       papel: "almoxarife",
       utId: "ut1",
+      utsAdicionais: [],
       ativo: true,
       deveTrocarSenha: false,
     });

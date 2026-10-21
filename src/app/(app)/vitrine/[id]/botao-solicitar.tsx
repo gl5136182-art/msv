@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Campo } from "@/components/ui/campo";
 import { Dialogo } from "@/components/ui/dialogo";
 import { Input } from "@/components/ui/input";
+import { Seletor } from "@/components/ui/seletor";
 import { formatarNumero } from "@/lib/formatacao";
 import { ROTULO_UNIDADE, type Unidade } from "@/modules/itens/itens.schemas";
 import { solicitar } from "@/modules/solicitacoes/solicitacoes.actions";
@@ -18,13 +19,20 @@ type BotaoSolicitarProps = {
   nome: string;
   quantidadeDisponivel: number;
   unidade: Unidade;
+  /** UTs do solicitante que podem receber o item, a principal primeiro (pelo menos uma). */
+  utsDestino: Array<{ id: string; rotulo: string }>;
 };
 
-// Modal "Solicitar" (SPEC §6.4): quantidade (de 1 até a disponível) e observação opcional.
-// A disponibilidade é conferida de novo no servidor, e de novo ao aceitar (regra 6).
-export function BotaoSolicitar({ itemId, nome, quantidadeDisponivel, unidade }: BotaoSolicitarProps) {
+// Modal "Solicitar" (SPEC §6.4): UT de destino, quantidade (de 1 até a disponível) e observação
+// opcional. A UT de destino vem preenchida quando o solicitante só tem uma; com mais de uma, ele
+// escolhe. A disponibilidade é conferida de novo no servidor, e de novo ao aceitar (regra 6).
+export function BotaoSolicitar({ itemId, nome, quantidadeDisponivel, unidade, utsDestino }: BotaoSolicitarProps) {
   const router = useRouter();
+  const escolheDestino = utsDestino.length > 1;
+  const destinoUnico = escolheDestino ? "" : (utsDestino[0]?.id ?? "");
   const [aberto, setAberto] = useState(false);
+  const [utDestinoId, setUtDestinoId] = useState(destinoUnico);
+  const [erroUt, setErroUt] = useState<string | null>(null);
   const [quantidade, setQuantidade] = useState("1");
   const [observacao, setObservacao] = useState("");
   const [erro, setErro] = useState<string | null>(null);
@@ -37,15 +45,23 @@ export function BotaoSolicitar({ itemId, nome, quantidadeDisponivel, unidade }: 
     if (processando) return;
     setAberto(proximo);
     if (proximo) {
+      setUtDestinoId(destinoUnico);
       setQuantidade("1");
       setObservacao("");
       setErro(null);
+      setErroUt(null);
     }
   }
 
   function aoEnviar(evento: React.FormEvent) {
     evento.preventDefault();
     setErro(null);
+    setErroUt(null);
+
+    if (!utDestinoId) {
+      setErroUt("Selecione a UT de destino.");
+      return;
+    }
 
     const valor = Number(quantidade);
     if (!Number.isInteger(valor) || valor < 1) {
@@ -58,9 +74,10 @@ export function BotaoSolicitar({ itemId, nome, quantidadeDisponivel, unidade }: 
     }
 
     iniciar(async () => {
-      const resultado = await solicitar({ itemId, quantidade: valor, observacao });
+      const resultado = await solicitar({ itemId, utDestinoId, quantidade: valor, observacao });
       if (!resultado.ok) {
-        setErro(resultado.erro);
+        if (resultado.codigo?.startsWith("UT_DESTINO")) setErroUt(resultado.erro);
+        else setErro(resultado.erro);
         return;
       }
       toast.success("Solicitação enviada.");
@@ -92,6 +109,34 @@ export function BotaoSolicitar({ itemId, nome, quantidadeDisponivel, unidade }: 
         }
       >
         <form id="form-solicitar" onSubmit={aoEnviar} noValidate className="flex flex-col gap-4">
+          {escolheDestino ? (
+            <Campo
+              htmlFor="solicitar-ut-destino"
+              rotulo="UT Destino"
+              obrigatorio
+              ajuda="Para qual das suas UTs o item vai."
+              erro={erroUt ?? undefined}
+            >
+              <Seletor
+                id="solicitar-ut-destino"
+                value={utDestinoId}
+                onChange={(e) => setUtDestinoId(e.target.value)}
+                aria-invalid={erroUt ? true : undefined}
+              >
+                <option value="">Selecione</option>
+                {utsDestino.map((ut) => (
+                  <option key={ut.id} value={ut.id}>
+                    {ut.rotulo}
+                  </option>
+                ))}
+              </Seletor>
+            </Campo>
+          ) : (
+            <Campo htmlFor="solicitar-ut-destino" rotulo="UT Destino" erro={erroUt ?? undefined}>
+              <Input id="solicitar-ut-destino" readOnly value={utsDestino[0]?.rotulo ?? ""} />
+            </Campo>
+          )}
+
           <Campo
             htmlFor="solicitar-quantidade"
             rotulo="Quantidade"

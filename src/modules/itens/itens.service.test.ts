@@ -15,13 +15,16 @@ vi.mock("@/modules/solicitacoes/solicitacoes.service", () => ({
   notificarRecusasDoItemArquivado: vi.fn(async () => undefined),
   contarPendentesPorItem: vi.fn(async () => ({}) as Record<string, number>),
 }));
+vi.mock("@/modules/uts/uts.service", () => ({
+  listarUtsAtivasPorIds: vi.fn(async (ids: string[]) => ids.map((id) => ({ id, rotulo: `UT ${id}` }))),
+}));
 vi.mock("./itens.repository", () => ({
   buscarIdPorRm: vi.fn(),
   buscarPorId: vi.fn(),
   criar: vi.fn(),
   atualizar: vi.fn(),
   atualizarQuantidade: vi.fn(),
-  listarPorUt: vi.fn(),
+  listarPorUts: vi.fn(),
   listarVitrine: vi.fn(),
   buscarDaVitrine: vi.fn(),
 }));
@@ -57,6 +60,7 @@ const almoxarife: UsuarioLogado = {
   email: "alm@manserv.com.br",
   papel: "almoxarife",
   utId: "ut1",
+  utsAdicionais: [],
   ativo: true,
   deveTrocarSenha: false,
 };
@@ -750,6 +754,7 @@ describe("obterItemDaVitrine", () => {
       ut: { id: "ut2", cidade: "Uberaba", uf: "MG" },
       daMinhaUt: false,
       podeSolicitar: true,
+      utsDestino: [{ id: "ut1", rotulo: "UT ut1" }],
     });
     expect(r.fotos).toEqual([
       { urlPrincipal: `https://dl/${FOTO.chave}`, urlMiniatura: `https://dl/${FOTO.chaveThumb}` },
@@ -774,6 +779,14 @@ describe("obterItemDaVitrine", () => {
     expect(r.podeSolicitar).toBe(false);
   });
 
+  it("com várias UTs, o destino pode ser qualquer uma, menos a do item", async () => {
+    repo.buscarDaVitrine.mockResolvedValue(detalhe({ utId: "ut1" }));
+    const r = await obterItemDaVitrine({ ...almoxarife, utsAdicionais: ["ut4", "ut5"] }, "item1");
+    expect(r.daMinhaUt).toBe(true);
+    expect(r.podeSolicitar).toBe(true);
+    expect(r.utsDestino.map((ut) => ut.id)).toEqual(["ut4", "ut5"]);
+  });
+
   it("admin vê o item, mas não solicita", async () => {
     const r = await obterItemDaVitrine(admin, "item1");
     expect(r.daMinhaUt).toBe(false);
@@ -796,17 +809,17 @@ describe("obterItemDaVitrine", () => {
 
 describe("listarItensDaUt", () => {
   it("lista só a UT da sessão, com a miniatura da capa assinada", async () => {
-    repo.listarPorUt.mockResolvedValue([registro(), registro({ id: "item2", fotos: [] })]);
+    repo.listarPorUts.mockResolvedValue([registro(), registro({ id: "item2", fotos: [] })]);
     const r = await listarItensDaUt(almoxarife);
 
-    expect(repo.listarPorUt).toHaveBeenCalledWith("ut1");
+    expect(repo.listarPorUts).toHaveBeenCalledWith(["ut1"]);
     expect(r).toHaveLength(2);
     expect(r[0].urlMiniatura).toBe(`https://dl/${FOTO.chaveThumb}`);
     expect(r[1].urlMiniatura).toBeNull();
   });
 
   it("informa quantas solicitações pendentes cada item tem", async () => {
-    repo.listarPorUt.mockResolvedValue([registro(), registro({ id: "item2", fotos: [] })]);
+    repo.listarPorUts.mockResolvedValue([registro(), registro({ id: "item2", fotos: [] })]);
     vi.mocked(contarPendentesPorItem).mockResolvedValue({ item1: 3 });
 
     const r = await listarItensDaUt(almoxarife);
@@ -817,7 +830,7 @@ describe("listarItensDaUt", () => {
 
   it("almoxarife sem UT não vê nada", async () => {
     expect(await listarItensDaUt({ ...almoxarife, utId: null })).toEqual([]);
-    expect(repo.listarPorUt).not.toHaveBeenCalled();
+    expect(repo.listarPorUts).not.toHaveBeenCalled();
   });
 
   it("só almoxarife lista", async () => {

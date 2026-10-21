@@ -124,6 +124,7 @@ describe("trocarSenha", () => {
     email: "maria@manserv.com.br",
     papel: "colaborador",
     utId: "ut1",
+    utsAdicionais: [],
     ativo: true,
     deveTrocarSenha: true,
   };

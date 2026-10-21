@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { cache } from "react";
 
 import { obterAuth } from "@/infra/auth";
+import { db } from "@/infra/db";
 import { ErroNegocio } from "@/lib/erro-negocio";
 import { montarUsuarioLogado, type UsuarioLogado } from "@/lib/usuario-logado";
 
@@ -17,7 +18,15 @@ import { montarUsuarioLogado, type UsuarioLogado } from "@/lib/usuario-logado";
 export const obterUsuarioLogado = cache(async (): Promise<UsuarioLogado | null> => {
   const sessao = await obterAuth().api.getSession({ headers: await headers() });
   if (!sessao) return null;
-  return montarUsuarioLogado(sessao.user);
+  const adicionais = await db.usuarioUtAdicional.findMany({
+    where: { usuarioId: sessao.user.id },
+    select: { utId: true },
+    orderBy: { criadoEm: "asc" },
+  });
+  return montarUsuarioLogado(
+    sessao.user,
+    adicionais.map((a) => a.utId),
+  );
 });
 
 type OpcoesExigir = {

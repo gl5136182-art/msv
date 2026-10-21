@@ -41,10 +41,14 @@ export async function marcarTodasLidas(usuarioId: string, cliente: ClienteDb = d
   return count;
 }
 
-/** Almoxarifes ativos da UT: quem recebe os eventos "do lado da origem". */
+/** Almoxarifes ativos da UT (principal ou adicional): quem recebe os eventos "do lado da origem". */
 export function listarAlmoxarifesAtivosDaUt(utId: string, cliente: ClienteDb = db): Promise<UsuarioParaNotificar[]> {
   return cliente.usuario.findMany({
-    where: { utId, papel: "almoxarife", ativo: true },
+    where: {
+      OR: [{ utId }, { utsAdicionais: { some: { utId } } }],
+      papel: { in: ["almoxarife", "moderador"] },
+      ativo: true,
+    },
     select: { id: true, name: true, email: true },
   });
 }

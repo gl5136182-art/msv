@@ -1,5 +1,5 @@
 import type { NomeIcone } from "@/components/icone";
-import type { Papel } from "@/lib/usuario-logado";
+import { temPapel, type Papel } from "@/lib/usuario-logado";
 
 // Itens da navegação principal e quem os vê (DESIGN §5, tabela "Navegação por papel").
 export type ItemNavegacao = {
@@ -19,7 +19,7 @@ export const ITENS_NAVEGACAO: readonly ItemNavegacao[] = [
 
 /** Só a ocultação na interface. A autorização de verdade é do service (SPEC §7). */
 export function itensDoPapel(papel: Papel): ItemNavegacao[] {
-  return ITENS_NAVEGACAO.filter((item) => item.papeis.includes(papel));
+  return ITENS_NAVEGACAO.filter((item) => temPapel(papel, ...item.papeis));
 }
 
 export function itemEstaAtivo(href: string, pathname: string): boolean {
