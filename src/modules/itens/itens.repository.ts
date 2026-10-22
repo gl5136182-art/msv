@@ -171,6 +171,48 @@ export async function listarVitrine(
   return { itens, total };
 }
 
+const selecionarCandidatoReuso = {
+  id: true,
+  nome: true,
+  marca: true,
+  modelo: true,
+  descricao: true,
+  estado: true,
+  unidade: true,
+  quantidadeDisponivel: true,
+  buscaNormalizada: true,
+  ut: { select: { id: true, nome: true } },
+} satisfies Prisma.ItemSelect;
+
+export type CandidatoReusoRegistro = Prisma.ItemGetPayload<{ select: typeof selecionarCandidatoReuso }>;
+
+/**
+ * Candidatos a reuso para uma linha de requisição (SPEC §6.6): mesmo critério da vitrine
+ * (`disponivel`, UT ativa), com saldo e fora das UTs de quem requisita. Casa qualquer uma das
+ * consultas (OR); dentro de cada consulta, todas as palavras (AND). O ranking é feito no service.
+ */
+export function buscarCandidatosReuso(
+  consultas: string[][],
+  utsExcluidas: string[],
+  limite: number,
+  cliente: ClienteDb = db,
+): Promise<CandidatoReusoRegistro[]> {
+  const validas = consultas.filter((c) => c.length > 0);
+  if (validas.length === 0) return Promise.resolve([]);
+  return cliente.item.findMany({
+    where: {
+      status: "disponivel",
+      quantidadeDisponivel: { gt: 0 },
+      ut: { ativo: true },
+      ...(utsExcluidas.length > 0 ? { utId: { notIn: utsExcluidas } } : {}),
+      OR: validas.map((palavras) => ({ AND: palavras.map((p) => ({ buscaNormalizada: { contains: p } })) })),
+    },
+    select: selecionarCandidatoReuso,
+    orderBy: [{ quantidadeDisponivel: "desc" }, { id: "asc" }],
+    take: limite,
+  });
+}
+
 const incluirDetalheVitrine = {
   ut: { select: { id: true, nome: true, cidade: true, uf: true } },
   fotos: { select: { chave: true, chaveThumb: true, ordem: true }, orderBy: { ordem: "asc" } },

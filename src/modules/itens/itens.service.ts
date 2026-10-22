@@ -5,6 +5,7 @@ import { ErroNegocio } from "@/lib/erro-negocio";
 import { normalizar } from "@/lib/normalizar";
 import { exigirPapel } from "@/lib/permissoes";
 import { temPapel, utsDoUsuario, vinculadoAUt, type UsuarioLogado } from "@/lib/usuario-logado";
+import type { Candidato } from "@/modules/ia/recomendar-reuso";
 import { listarUtsAtivasPorIds } from "@/modules/uts/uts.service";
 
 import {
@@ -425,6 +426,34 @@ export async function listarVitrine(usuario: UsuarioLogado, filtros: FiltrosVitr
     totalPaginas,
     porPagina: ITENS_POR_PAGINA_VITRINE,
   };
+}
+
+const LIMITE_CANDIDATOS_POR_CONSULTA = 25;
+
+/**
+ * Itens de outras UTs que podem atender uma linha de requisição (SPEC §6.6), já no formato da
+ * análise de reuso. Uma busca por consulta (uma palavra genérica não esconde as outras), sem
+ * repetir item. Sem checagem de papel: quem chama (service de requisições) já conferiu.
+ */
+export async function buscarCandidatosReuso(consultas: string[][], utsExcluidas: string[]): Promise<Candidato[]> {
+  const listas = await Promise.all(
+    consultas.map((consulta) =>
+      repository.buscarCandidatosReuso([consulta], utsExcluidas, LIMITE_CANDIDATOS_POR_CONSULTA),
+    ),
+  );
+  const itens = [...new Map(listas.flat().map((item) => [item.id, item])).values()];
+  return itens.map((item) => ({
+    id: item.id,
+    nome: item.nome,
+    marca: item.marca,
+    modelo: item.modelo,
+    descricao: item.descricao,
+    estado: item.estado,
+    unidade: item.unidade,
+    quantidadeDisponivel: item.quantidadeDisponivel,
+    utNome: item.ut.nome,
+    buscaNormalizada: item.buscaNormalizada,
+  }));
 }
 
 /**

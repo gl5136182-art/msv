@@ -5,16 +5,16 @@ import { itemEstaAtivo, itensDoPapel } from "./itens-navegacao";
 const rotulos = (papel: Parameters<typeof itensDoPapel>[0]) => itensDoPapel(papel).map((i) => i.rotulo);
 
 describe("itensDoPapel (DESIGN §5)", () => {
-  it("colaborador: Vitrine, Solicitações e Dashboard", () => {
-    expect(rotulos("colaborador")).toEqual(["Vitrine", "Solicitações", "Dashboard"]);
+  it("colaborador: Vitrine, Solicitações, Requisições e Dashboard", () => {
+    expect(rotulos("colaborador")).toEqual(["Vitrine", "Solicitações", "Requisições", "Dashboard"]);
   });
 
-  it("almoxarife: Vitrine, Meus itens, Solicitações e Dashboard", () => {
-    expect(rotulos("almoxarife")).toEqual(["Vitrine", "Meus itens", "Solicitações", "Dashboard"]);
+  it("almoxarife: Vitrine, Meus itens, Solicitações, Requisições e Dashboard", () => {
+    expect(rotulos("almoxarife")).toEqual(["Vitrine", "Meus itens", "Solicitações", "Requisições", "Dashboard"]);
   });
 
-  it("admin: Vitrine, Dashboard e Administração (não cadastra nem solicita)", () => {
-    expect(rotulos("admin")).toEqual(["Vitrine", "Dashboard", "Administração"]);
+  it("admin: Vitrine, Requisições (só consulta), Dashboard e Administração", () => {
+    expect(rotulos("admin")).toEqual(["Vitrine", "Requisições", "Dashboard", "Administração"]);
   });
 });
 

@@ -13,6 +13,7 @@ export const ITENS_NAVEGACAO: readonly ItemNavegacao[] = [
   { href: "/vitrine", rotulo: "Vitrine", icone: "storefront", papeis: ["colaborador", "almoxarife", "admin"] },
   { href: "/meus-itens", rotulo: "Meus itens", icone: "inventory_2", papeis: ["almoxarife"] },
   { href: "/solicitacoes", rotulo: "Solicitações", icone: "swap_horiz", papeis: ["colaborador", "almoxarife"] },
+  { href: "/requisicoes", rotulo: "Requisições", icone: "request_quote", papeis: ["colaborador", "almoxarife", "admin"] },
   { href: "/dashboard", rotulo: "Dashboard", icone: "bar_chart", papeis: ["colaborador", "almoxarife", "admin"] },
   { href: "/administracao", rotulo: "Administração", icone: "settings", papeis: ["admin"] },
 ];
