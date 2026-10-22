@@ -28,6 +28,7 @@ const ICONES = [
   "person",
   "photo_library",
   "refresh",
+  "request_quote",
   "search",
   "settings",
   "storefront",
