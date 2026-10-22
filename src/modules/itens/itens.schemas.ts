@@ -410,8 +410,37 @@ export type ItemDetalheVitrineDto = {
    * primeiro. Com mais de uma, o solicitante escolhe o destino.
    */
   utsDestino: Array<{ id: string; rotulo: string }>;
+  /** A IA está configurada: sem ela, o botão "Calcular frete" não aparece. */
+  iaDisponivel: boolean;
   /** Fotos na ordem do cadastro (a primeira é a capa), com URL assinada da principal e da miniatura. */
   fotos: Array<{ urlPrincipal: string | null; urlMiniatura: string | null }>;
+};
+
+/** "Calcular frete" na vitrine (SPEC §6.6): para qual UT e quantas unidades. */
+export const estimarFreteSchema = z.object({
+  itemId: z.string().min(1),
+  utDestinoId: z.string().min(1, "Selecione a UT de destino."),
+  quantidade: z.number().int().min(1, "Informe a quantidade."),
+});
+export type EstimarFreteEntrada = z.infer<typeof estimarFreteSchema>;
+
+/** Estimativa de frete: compra nova (calculada) × transportadora e veículo próprio (IA). */
+export type EstimativaFreteDto = {
+  origem: string;
+  destino: string;
+  quantidade: number;
+  distanciaKm: number;
+  carga: {
+    medidasInformadas: boolean;
+    pesoTotalKg: number | null;
+    volumeTotalM3: number | null;
+  };
+  valorUnitarioReposicao: number;
+  compraNova: number;
+  transportadora: { min: number; max: number };
+  veiculoProprio: { min: number; max: number };
+  recomendada: "compra" | "transportadora" | "veiculo";
+  justificativa: string;
 };
 
 export type PaginaVitrineDto = {
