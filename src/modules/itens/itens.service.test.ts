@@ -10,6 +10,7 @@ vi.mock("@/infra/storage", () => ({
   remover: vi.fn(async () => undefined),
 }));
 vi.mock("@/infra/db", () => ({ db: { $transaction: vi.fn() } }));
+vi.mock("@/infra/llm", () => ({ completarJson: vi.fn(), iaDisponivel: vi.fn(() => true) }));
 vi.mock("@/modules/solicitacoes/solicitacoes.service", () => ({
   recusarPendentesDoItemArquivado: vi.fn(async () => []),
   notificarRecusasDoItemArquivado: vi.fn(async () => undefined),
@@ -30,11 +31,13 @@ vi.mock("./itens.repository", () => ({
 }));
 
 import { db } from "@/infra/db";
+import { completarJson } from "@/infra/llm";
 import { criarUrlsUpload, obterUrls, remover } from "@/infra/storage";
 import {
   contarPendentesPorItem,
   recusarPendentesDoItemArquivado,
 } from "@/modules/solicitacoes/solicitacoes.service";
+import { listarUtsAtivasPorIds } from "@/modules/uts/uts.service";
 
 import * as repository from "./itens.repository";
 import type { ItemDetalheVitrineRegistro, ItemRegistro, ItemVitrineRegistro } from "./itens.repository";
@@ -44,6 +47,7 @@ import {
   alterarArquivamento,
   criarItem,
   editarItem,
+  estimarFreteDoItem,
   listarItensDaUt,
   listarVitrine,
   montarBuscaNormalizada,
@@ -836,5 +840,59 @@ describe("listarItensDaUt", () => {
   it("só almoxarife lista", async () => {
     await expect(listarItensDaUt(colaborador)).rejects.toMatchObject({ codigo: "SEM_PERMISSAO" });
     await expect(listarItensDaUt(admin)).rejects.toMatchObject({ codigo: "SEM_PERMISSAO" });
+  });
+});
+
+describe("estimarFreteDoItem", () => {
+  const llm = vi.mocked(completarJson);
+  const entrada = { itemId: "item1", utDestinoId: "ut1", quantidade: 2 };
+
+  beforeEach(() => {
+    repo.buscarDaVitrine.mockResolvedValue({
+      ...registro({ utId: "ut2" }),
+      ut: { id: "ut2", nome: "BASE", cidade: "Uberaba", uf: "MG" },
+    } as ItemDetalheVitrineRegistro);
+    vi.mocked(listarUtsAtivasPorIds).mockResolvedValue([
+      { id: "ut1", codigo: "1", nome: "SEDE", cidade: "Campinas", uf: "SP", ativo: true, rotulo: "", criadoEm: "" },
+    ]);
+    llm.mockReset();
+    llm.mockResolvedValue({
+      distanciaKm: 480,
+      transportadora: { min: 80, max: 180 },
+      veiculoProprio: { min: 900, max: 1000 },
+      justificativa: "Carga pequena.",
+    });
+  });
+
+  it("compara compra nova, transportadora e veículo próprio com a carga da quantidade", async () => {
+    const r = await estimarFreteDoItem(colaborador, entrada);
+    expect(r).toMatchObject({
+      origem: "Uberaba/MG",
+      destino: "Campinas/SP",
+      compraNova: 901.8,
+      carga: { medidasInformadas: true, pesoTotalKg: 4.2, volumeTotalM3: 0.015 },
+      recomendada: "transportadora",
+    });
+  });
+
+  it("valida destino, quantidade e papel", async () => {
+    await expect(estimarFreteDoItem(colaborador, { ...entrada, utDestinoId: "ut9" })).rejects.toMatchObject({
+      codigo: "UT_DESTINO_INVALIDA",
+    });
+    await expect(estimarFreteDoItem(colaborador, { ...entrada, quantidade: 4 })).rejects.toMatchObject({
+      codigo: "QUANTIDADE_INDISPONIVEL",
+    });
+    await expect(estimarFreteDoItem(admin, entrada)).rejects.toMatchObject({ codigo: "SEM_PERMISSAO" });
+
+    repo.buscarDaVitrine.mockResolvedValue({
+      ...registro({ utId: "ut1" }),
+      ut: { id: "ut1", nome: "SEDE", cidade: "Campinas", uf: "SP" },
+    } as ItemDetalheVitrineRegistro);
+    await expect(estimarFreteDoItem(colaborador, entrada)).rejects.toMatchObject({ codigo: "ITEM_DA_PROPRIA_UT" });
+  });
+
+  it("sem resposta da IA, avisa que não deu para estimar", async () => {
+    llm.mockResolvedValue(null);
+    await expect(estimarFreteDoItem(colaborador, entrada)).rejects.toMatchObject({ codigo: "IA_INDISPONIVEL" });
   });
 });

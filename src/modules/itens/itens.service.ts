@@ -1,10 +1,12 @@
 import { db } from "@/infra/db";
+import { iaDisponivel } from "@/infra/llm";
 import { criarUrlsUpload, obterUrls, remover } from "@/infra/storage";
 import { gerarChavesFoto } from "@/lib/chaves-foto";
 import { ErroNegocio } from "@/lib/erro-negocio";
 import { normalizar } from "@/lib/normalizar";
 import { exigirPapel } from "@/lib/permissoes";
 import { temPapel, utsDoUsuario, vinculadoAUt, type UsuarioLogado } from "@/lib/usuario-logado";
+import { compararOpcoes, consolidarCarga, estimarFrete } from "@/modules/ia/estimar-frete";
 import type { Candidato } from "@/modules/ia/recomendar-reuso";
 import { listarUtsAtivasPorIds } from "@/modules/uts/uts.service";
 
@@ -22,6 +24,8 @@ import type {
   AlterarArquivamentoEntrada,
   CategoriaItem,
   EditarItemEntrada,
+  EstimarFreteEntrada,
+  EstimativaFreteDto,
   FiltrosVitrine,
   ItemDto,
   ItemDetalheVitrineDto,
@@ -503,10 +507,87 @@ export async function obterItemDaVitrine(usuario: UsuarioLogado, id: string): Pr
     daMinhaUt,
     podeSolicitar: utsDestino.length > 0,
     utsDestino: utsDestino.map((ut) => ({ id: ut.id, rotulo: ut.rotulo })),
+    iaDisponivel: iaDisponivel(),
     fotos: item.fotos.map((f) => ({
       urlPrincipal: urls[f.chave] ?? null,
       urlMiniatura: urls[f.chaveThumb] ?? null,
     })),
+  };
+}
+
+/**
+ * "Calcular frete" na vitrine (SPEC §6.6): compra nova × transportadora × veículo próprio, da UT
+ * do item até uma UT do usuário, pela cidade/UF de cada uma. Mesmas regras de quem pode solicitar
+ * (papel, destino entre as UTs do usuário e diferente da do item, quantidade até a disponível).
+ */
+export async function estimarFreteDoItem(
+  usuario: UsuarioLogado,
+  entrada: EstimarFreteEntrada,
+): Promise<EstimativaFreteDto> {
+  exigirPapel(usuario, "colaborador", "almoxarife");
+  if (!utsDoUsuario(usuario).includes(entrada.utDestinoId)) {
+    throw new ErroNegocio("UT_DESTINO_INVALIDA", "Você não está vinculado a esta UT de destino.");
+  }
+
+  const item = await repository.buscarDaVitrine(entrada.itemId);
+  if (!item) {
+    throw new ErroNegocio("ITEM_NAO_ENCONTRADO", "Item não encontrado ou não está mais disponível.");
+  }
+  if (item.utId === entrada.utDestinoId) {
+    throw new ErroNegocio("ITEM_DA_PROPRIA_UT", "O item já está nesta UT.");
+  }
+  if (entrada.quantidade > item.quantidadeDisponivel) {
+    throw new ErroNegocio(
+      "QUANTIDADE_INDISPONIVEL",
+      `Quantidade indisponível. Há ${item.quantidadeDisponivel} disponível no momento.`,
+    );
+  }
+  const [destino] = await listarUtsAtivasPorIds([entrada.utDestinoId]);
+  if (!destino) {
+    throw new ErroNegocio("UT_DESTINO_INVALIDA", "A UT de destino está inativa.");
+  }
+
+  const carga = consolidarCarga(
+    {
+      larguraCm: decimalOuNulo(item.larguraCm),
+      alturaCm: decimalOuNulo(item.alturaCm),
+      profundidadeCm: decimalOuNulo(item.profundidadeCm),
+      pesoKg: decimalOuNulo(item.pesoKg),
+      lote: loteDoRegistro(item),
+      quantidadeDisponivel: item.quantidadeDisponivel,
+    },
+    entrada.quantidade,
+  );
+  const estimativa = await estimarFrete({
+    origem: { cidade: item.ut.cidade, uf: item.ut.uf },
+    destino: { cidade: destino.cidade, uf: destino.uf },
+    item: { nome: item.nome, marca: item.marca, modelo: item.modelo, categoria: ROTULO_CATEGORIA[item.categoria] },
+    quantidade: entrada.quantidade,
+    unidade: item.unidade,
+    carga,
+  });
+  if (!estimativa) {
+    throw new ErroNegocio("IA_INDISPONIVEL", "Não foi possível estimar o frete agora. Tente de novo em instantes.");
+  }
+
+  const valorUnitarioReposicao = item.valorUnitarioReposicao.toNumber();
+  const { compraNova, recomendada } = compararOpcoes(valorUnitarioReposicao, entrada.quantidade, estimativa);
+  return {
+    origem: `${item.ut.cidade}/${item.ut.uf}`,
+    destino: `${destino.cidade}/${destino.uf}`,
+    quantidade: entrada.quantidade,
+    distanciaKm: estimativa.distanciaKm,
+    carga: {
+      medidasInformadas: carga.medidasInformadas,
+      pesoTotalKg: carga.pesoTotalKg,
+      volumeTotalM3: carga.volumeTotalM3,
+    },
+    valorUnitarioReposicao,
+    compraNova,
+    transportadora: estimativa.transportadora,
+    veiculoProprio: estimativa.veiculoProprio,
+    recomendada,
+    justificativa: estimativa.justificativa,
   };
 }
 

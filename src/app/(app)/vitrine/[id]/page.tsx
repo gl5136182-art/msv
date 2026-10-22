@@ -16,6 +16,7 @@ import {
   type OrigemDimensoes,
 } from "@/modules/itens/itens.schemas";
 
+import { BotaoCalcularFrete } from "./botao-calcular-frete";
 import { BotaoSolicitar } from "./botao-solicitar";
 import { GaleriaFotos } from "./galeria-fotos";
 
@@ -109,13 +110,24 @@ export default async function PaginaItemDaVitrine({ params }: PageProps<"/vitrin
             </dl>
 
             {item.podeSolicitar ? (
-              <BotaoSolicitar
-                itemId={item.id}
-                nome={item.nome}
-                quantidadeDisponivel={item.quantidadeDisponivel}
-                unidade={item.unidade}
-                utsDestino={item.utsDestino}
-              />
+              <div className="flex flex-col gap-2">
+                <BotaoSolicitar
+                  itemId={item.id}
+                  nome={item.nome}
+                  quantidadeDisponivel={item.quantidadeDisponivel}
+                  unidade={item.unidade}
+                  utsDestino={item.utsDestino}
+                />
+                {item.iaDisponivel ? (
+                  <BotaoCalcularFrete
+                    itemId={item.id}
+                    nome={item.nome}
+                    quantidadeDisponivel={item.quantidadeDisponivel}
+                    unidade={item.unidade}
+                    utsDestino={item.utsDestino}
+                  />
+                ) : null}
+              </div>
             ) : item.daMinhaUt ? (
               <p className="text-xs text-muted-foreground">Este item é da sua UT.</p>
             ) : null}
