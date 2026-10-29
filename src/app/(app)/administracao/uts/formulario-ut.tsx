@@ -39,6 +39,11 @@ export function FormularioUt({ ut, aoConcluir, aoCancelar }: FormularioUtProps) 
       nome: ut?.nome ?? "",
       cidade: ut?.cidade ?? "",
       uf: ut?.uf ?? "",
+      cep: ut?.cep ?? "",
+      logradouro: ut?.logradouro ?? "",
+      numero: ut?.numero ?? "",
+      complemento: ut?.complemento ?? "",
+      bairro: ut?.bairro ?? "",
     },
   });
 
@@ -106,6 +111,45 @@ export function FormularioUt({ ut, aoConcluir, aoCancelar }: FormularioUtProps) 
           </Seletor>
         </Campo>
       </div>
+
+      <fieldset className="flex flex-col gap-4 border-t border-border pt-4">
+        <legend className="px-0 text-sm font-medium">Endereço para cotação de frete</legend>
+        <p className="-mt-3 text-xs text-muted-foreground">
+          Opcional no cadastro. O CEP será necessário para calcular o frete.
+        </p>
+
+        <div className="grid gap-4 sm:grid-cols-[9rem_1fr]">
+          <Campo htmlFor="ut-cep" rotulo="CEP" erro={errors.cep?.message}>
+            <Input
+              id="ut-cep"
+              autoComplete="postal-code"
+              inputMode="numeric"
+              maxLength={9}
+              placeholder="00000-000"
+              aria-invalid={errors.cep ? true : undefined}
+              {...register("cep")}
+            />
+          </Campo>
+
+          <Campo htmlFor="ut-logradouro" rotulo="Logradouro" erro={errors.logradouro?.message}>
+            <Input id="ut-logradouro" autoComplete="street-address" maxLength={150} {...register("logradouro")} />
+          </Campo>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-[7rem_1fr]">
+          <Campo htmlFor="ut-numero" rotulo="Número" erro={errors.numero?.message}>
+            <Input id="ut-numero" maxLength={20} {...register("numero")} />
+          </Campo>
+
+          <Campo htmlFor="ut-bairro" rotulo="Bairro" erro={errors.bairro?.message}>
+            <Input id="ut-bairro" maxLength={100} {...register("bairro")} />
+          </Campo>
+        </div>
+
+        <Campo htmlFor="ut-complemento" rotulo="Complemento" erro={errors.complemento?.message}>
+          <Input id="ut-complemento" maxLength={100} {...register("complemento")} />
+        </Campo>
+      </fieldset>
 
       {erro ? (
         <p role="alert" className="text-xs text-destructive">

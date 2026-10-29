@@ -1,6 +1,5 @@
 // Desfaz a carga do inventário: remove os itens `inv-*` (e as fotos, no banco e no storage).
-// Só toca nos itens criados por `importar-inventario.ts`. Se algum já recebeu solicitação, não
-// apaga nada: o histórico de solicitações é dado real e não pode sumir junto.
+// Só toca nos itens criados por `importar-inventario.ts`.
 
 import "dotenv/config";
 
@@ -21,13 +20,6 @@ async function limpar(): Promise<void> {
     return;
   }
   const itemIds = itens.map((i) => i.id);
-
-  const comSolicitacao = await db.solicitacao.count({ where: { itemId: { in: itemIds } } });
-  if (comSolicitacao > 0) {
-    throw new Error(
-      `${comSolicitacao} solicitações apontam para itens do inventário. Nada foi apagado: arquive os itens no app em vez de limpar.`,
-    );
-  }
 
   const fotos = await db.itemFoto.findMany({
     where: { itemId: { in: itemIds } },

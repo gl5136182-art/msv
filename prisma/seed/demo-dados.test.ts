@@ -1,17 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { cpfValido } from "@/lib/cpf";
-import {
-  calcularEconomia,
-  calcularTaxaReaproveitamento,
-  economiaPorMes,
-  intervaloDoPeriodo,
-  mesesDoIntervalo,
-  resumirEstoque,
-  somarUnidades,
-  valorParadoPorCategoria,
-  type TransferenciaBase,
-} from "@/modules/dashboard/dashboard.regras";
+import { resumirEstoque, valorParadoPorCategoria } from "@/modules/dashboard/dashboard.regras";
 
 import { cpfComDigitos, gerarConjuntoDemo, PREFIXO_UT_DEMO } from "./demo-dados";
 
@@ -68,59 +58,7 @@ describe("conjunto de demonstração (SPEC §9, fase 6)", () => {
     expect(conjunto.itens.some((i) => i.status === "disponivel")).toBe(true);
   });
 
-  it("tem cerca de 60 solicitações concluídas, espalhadas em 12 meses", () => {
-    expect(conjunto.solicitacoes).toHaveLength(60);
-
-    const { inicio, fim } = intervaloDoPeriodo("12m", agora);
-    const meses = mesesDoIntervalo(inicio, fim);
-    const mensal = economiaPorMes(
-      conjunto.solicitacoes.map((s) => paraTransferencia(s)),
-      meses,
-    );
-    const mesesComTransferencia = mensal.filter((p) => p.liquida !== 0).length;
-    expect(mesesComTransferencia).toBeGreaterThanOrEqual(8);
-  });
-
-  it("solicitações respeitam as regras: outra UT, ordem das datas e quantidade do item", () => {
-    const itemPorId = new Map(conjunto.itens.map((i) => [i.id, i]));
-    const transferidoPorItem = new Map<string, number>();
-
-    for (const s of conjunto.solicitacoes) {
-      const item = itemPorId.get(s.itemId)!;
-      expect(s.utDestinoCodigo).not.toBe(item.utCodigo);
-      expect(s.criadoEm.getTime()).toBeGreaterThan(item.criadoEm.getTime());
-      expect(s.respondidaEm.getTime()).toBeGreaterThan(s.criadoEm.getTime());
-      expect(s.concluidaEm.getTime()).toBeGreaterThan(s.respondidaEm.getTime());
-      expect(s.concluidaEm.getTime()).toBeLessThan(agora.getTime());
-      expect(s.valorUnitarioSnapshot).toBe(item.valorUnitarioReposicao);
-      expect(s.custoFrete).toBeGreaterThanOrEqual(0);
-      transferidoPorItem.set(s.itemId, (transferidoPorItem.get(s.itemId) ?? 0) + s.quantidade);
-    }
-
-    for (const [itemId, total] of transferidoPorItem) {
-      const item = itemPorId.get(itemId)!;
-      // O que saiu mais o que ficou fecha a quantidade cadastrada.
-      expect(total + item.quantidadeDisponivel).toBe(item.quantidadeTotal);
-    }
-  });
-
   it("indicadores do dashboard batem com uma conta independente sobre os dados", () => {
-    // Conta feita à mão, em centavos, direto sobre o conjunto.
-    let brutoCent = 0;
-    let freteCent = 0;
-    let unidades = 0;
-    for (const s of conjunto.solicitacoes) {
-      brutoCent += s.quantidade * Math.round(s.valorUnitarioSnapshot * 100);
-      freteCent += Math.round(s.custoFrete * 100);
-      unidades += s.quantidade;
-    }
-    const transferencias = conjunto.solicitacoes.map((s) => paraTransferencia(s));
-    const economia = calcularEconomia(transferencias);
-    expect(economia.bruta).toBe(brutoCent / 100);
-    expect(economia.frete).toBe(freteCent / 100);
-    expect(economia.liquida).toBe((brutoCent - freteCent) / 100);
-    expect(somarUnidades(transferencias)).toBe(unidades);
-
     // Valor parado: só itens disponíveis (a vitrine).
     const disponiveis = conjunto.itens.filter((i) => i.status === "disponivel");
     const valorParadoCent = disponiveis.reduce(
@@ -137,38 +75,10 @@ describe("conjunto de demonstração (SPEC §9, fase 6)", () => {
     expect(estoque.itens).toBe(disponiveis.length);
     expect(estoque.valorParado).toBe(valorParadoCent / 100);
     expect(valorParadoPorCategoria(base).reduce((soma, b) => soma + b.valor, 0)).toBeCloseTo(valorParadoCent / 100, 2);
-
-    // Taxa: unidades cedidas ÷ unidades cadastradas (itens cadastrados há ≤ 12 meses não existem
-    // antes de `inicio`? os mais antigos entram no denominador só se criados no período).
-    const { inicio } = intervaloDoPeriodo("12m", agora);
-    const cadastradas = conjunto.itens
-      .filter((i) => i.criadoEm >= inicio)
-      .reduce((soma, i) => soma + i.quantidadeTotal, 0);
-    expect(calcularTaxaReaproveitamento(unidades, cadastradas)).toBe(unidades / cadastradas);
-  });
-
-  it("o resultado fica numa faixa convincente para a apresentação", () => {
-    const transferencias = conjunto.solicitacoes.map((s) => paraTransferencia(s));
-    const economia = calcularEconomia(transferencias);
-    expect(economia.liquida).toBeGreaterThan(50_000);
-    expect(economia.frete).toBeGreaterThan(0);
   });
 });
 
 function utBase(codigo: string) {
   const ut = conjunto.uts.find((u) => u.codigo === codigo)!;
   return { id: ut.codigo, nome: ut.nome, cidade: ut.cidade, uf: ut.uf };
-}
-
-function paraTransferencia(s: (typeof conjunto.solicitacoes)[number]): TransferenciaBase {
-  const item = conjunto.itens.find((i) => i.id === s.itemId)!;
-  return {
-    origem: utBase(item.utCodigo),
-    destino: utBase(s.utDestinoCodigo),
-    quantidade: s.quantidade,
-    valorUnitarioSnapshot: s.valorUnitarioSnapshot,
-    custoFrete: s.custoFrete,
-    concluidaEm: s.concluidaEm,
-    itemCriadoEm: item.criadoEm,
-  };
 }

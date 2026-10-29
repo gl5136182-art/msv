@@ -1,21 +1,15 @@
 import { db } from "@/infra/db";
-import { iaDisponivel } from "@/infra/llm";
+import { cotarFretes, freteDisponivel } from "@/infra/frete";
 import { criarUrlsUpload, obterUrls, remover } from "@/infra/storage";
 import { gerarChavesFoto } from "@/lib/chaves-foto";
 import { ErroNegocio } from "@/lib/erro-negocio";
 import { normalizar } from "@/lib/normalizar";
 import { exigirPapel } from "@/lib/permissoes";
 import { temPapel, utsDoUsuario, vinculadoAUt, type UsuarioLogado } from "@/lib/usuario-logado";
-import { compararOpcoes, consolidarCarga, estimarFrete } from "@/modules/ia/estimar-frete";
-import type { Candidato } from "@/modules/ia/recomendar-reuso";
+import { recomendarFrete, recomendarMenorCusto } from "@/modules/ia/recomendar-frete";
 import { listarUtsAtivasPorIds } from "@/modules/uts/uts.service";
 
-import {
-  contarPendentesPorItem,
-  notificarRecusasDoItemArquivado,
-  recusarPendentesDoItemArquivado,
-} from "@/modules/solicitacoes/solicitacoes.service";
-
+import { prepararCargaFrete } from "./carga-frete";
 import * as repository from "./itens.repository";
 import type { DadosNovoItem, ItemRegistro } from "./itens.repository";
 import { calcularAjusteDeQuantidade, statusAposArquivamento } from "./itens.regras";
@@ -24,8 +18,8 @@ import type {
   AlterarArquivamentoEntrada,
   CategoriaItem,
   EditarItemEntrada,
-  EstimarFreteEntrada,
-  EstimativaFreteDto,
+  CotarFreteEntrada,
+  CotacaoFreteDto,
   FiltrosVitrine,
   ItemDto,
   ItemDetalheVitrineDto,
@@ -316,7 +310,6 @@ export async function editarItem(usuario: UsuarioLogado, entrada: EditarItemEntr
 
 /**
  * Ajusta a quantidade disponível (SPEC §3, regras 2 e 3). Só o almoxarife da UT do item.
- * Solicitações já aceitas não são afetadas: elas já debitaram a quantidade ao serem aceitas.
  * Passar do total cadastrado sobe o total junto; 0 esgota o item; voltar a > 0 reativa.
  */
 export async function ajustarQuantidadeDisponivel(
@@ -336,7 +329,6 @@ export async function ajustarQuantidadeDisponivel(
 /**
  * Arquiva ou reativa o item (SPEC §3, regra 4). Só o almoxarife da UT do item.
  * Arquivado sai da vitrine; reativar volta a `disponivel` (ou `esgotado`, se não há unidades).
- * Ao arquivar, as solicitações pendentes do item são recusadas na mesma transação.
  */
 export async function alterarArquivamento(
   usuario: UsuarioLogado,
@@ -348,24 +340,13 @@ export async function alterarArquivamento(
   const status = statusAposArquivamento(entrada.arquivar, atual.quantidadeDisponivel);
   if (status === atual.status) return paraDto(atual);
 
-  // Arquivar e recusar as pendentes (regra 4) valem juntos ou nenhum dos dois.
-  const { atualizado, recusadas } = await db.$transaction(async (tx) => {
-    const item = await repository.atualizarQuantidade(
-      atual.id,
-      {
-        quantidadeDisponivel: atual.quantidadeDisponivel,
-        quantidadeTotal: atual.quantidadeTotal,
-        status,
-      },
-      tx,
-    );
-    const recusadas = entrada.arquivar ? await recusarPendentesDoItemArquivado(atual.id, tx) : [];
-    return { atualizado: item, recusadas };
-  });
-
-  // Depois do commit: avisar os solicitantes nunca desfaz nem quebra o arquivamento.
-  await notificarRecusasDoItemArquivado(atual.nome, recusadas);
-  return paraDto(atualizado);
+  return paraDto(
+    await repository.atualizarQuantidade(atual.id, {
+      quantidadeDisponivel: atual.quantidadeDisponivel,
+      quantidadeTotal: atual.quantidadeTotal,
+      status,
+    }),
+  );
 }
 
 const MAXIMO_TERMOS_BUSCA = 8;
@@ -432,34 +413,6 @@ export async function listarVitrine(usuario: UsuarioLogado, filtros: FiltrosVitr
   };
 }
 
-const LIMITE_CANDIDATOS_POR_CONSULTA = 25;
-
-/**
- * Itens de outras UTs que podem atender uma linha de requisição (SPEC §6.6), já no formato da
- * análise de reuso. Uma busca por consulta (uma palavra genérica não esconde as outras), sem
- * repetir item. Sem checagem de papel: quem chama (service de requisições) já conferiu.
- */
-export async function buscarCandidatosReuso(consultas: string[][], utsExcluidas: string[]): Promise<Candidato[]> {
-  const listas = await Promise.all(
-    consultas.map((consulta) =>
-      repository.buscarCandidatosReuso([consulta], utsExcluidas, LIMITE_CANDIDATOS_POR_CONSULTA),
-    ),
-  );
-  const itens = [...new Map(listas.flat().map((item) => [item.id, item])).values()];
-  return itens.map((item) => ({
-    id: item.id,
-    nome: item.nome,
-    marca: item.marca,
-    modelo: item.modelo,
-    descricao: item.descricao,
-    estado: item.estado,
-    unidade: item.unidade,
-    quantidadeDisponivel: item.quantidadeDisponivel,
-    utNome: item.ut.nome,
-    buscaNormalizada: item.buscaNormalizada,
-  }));
-}
-
 /**
  * Detalhe do item na vitrine (SPEC §6.3). Qualquer usuário logado vê item `disponivel` de UT
  * ativa; fora disso o item "não existe" para a vitrine. Fotos assinadas em lote, válidas por 1h.
@@ -477,8 +430,8 @@ export async function obterItemDaVitrine(usuario: UsuarioLogado, id: string): Pr
     VALIDADE_URLS_SEG,
   );
   const daMinhaUt = vinculadoAUt(usuario, item.utId);
-  const podeSolicitarPeloPapel = temPapel(usuario.papel, "colaborador", "almoxarife");
-  const utsDestino = podeSolicitarPeloPapel
+  const podeCalcularFretePeloPapel = temPapel(usuario.papel, "colaborador", "almoxarife");
+  const utsDestino = podeCalcularFretePeloPapel
     ? await listarUtsAtivasPorIds(utsDoUsuario(usuario).filter((utId) => utId !== item.utId))
     : [];
 
@@ -503,11 +456,11 @@ export async function obterItemDaVitrine(usuario: UsuarioLogado, id: string): Pr
     lote: loteDoRegistro(item),
     dimensoesOrigem: item.dimensoesOrigem,
     criadoEm: item.criadoEm.toISOString(),
-    ut: item.ut,
+    ut: { id: item.ut.id, nome: item.ut.nome, cidade: item.ut.cidade, uf: item.ut.uf },
     daMinhaUt,
-    podeSolicitar: utsDestino.length > 0,
+    podeCalcularFrete: utsDestino.length > 0,
     utsDestino: utsDestino.map((ut) => ({ id: ut.id, rotulo: ut.rotulo })),
-    iaDisponivel: iaDisponivel(),
+    freteDisponivel: freteDisponivel(),
     fotos: item.fotos.map((f) => ({
       urlPrincipal: urls[f.chave] ?? null,
       urlMiniatura: urls[f.chaveThumb] ?? null,
@@ -516,14 +469,13 @@ export async function obterItemDaVitrine(usuario: UsuarioLogado, id: string): Pr
 }
 
 /**
- * "Calcular frete" na vitrine (SPEC §6.6): compra nova × transportadora × veículo próprio, da UT
- * do item até uma UT do usuário, pela cidade/UF de cada uma. Mesmas regras de quem pode solicitar
- * (papel, destino entre as UTs do usuário e diferente da do item, quantidade até a disponível).
+ * Cotação real da UT do item até uma UT do usuário. A IA só escolhe entre opções conhecidas e
+ * estima o veículo próprio; sem ela, o código recomenda o menor valor disponível.
  */
-export async function estimarFreteDoItem(
+export async function cotarFreteDoItem(
   usuario: UsuarioLogado,
-  entrada: EstimarFreteEntrada,
-): Promise<EstimativaFreteDto> {
+  entrada: CotarFreteEntrada,
+): Promise<CotacaoFreteDto> {
   exigirPapel(usuario, "colaborador", "almoxarife");
   if (!utsDoUsuario(usuario).includes(entrada.utDestinoId)) {
     throw new ErroNegocio("UT_DESTINO_INVALIDA", "Você não está vinculado a esta UT de destino.");
@@ -546,8 +498,14 @@ export async function estimarFreteDoItem(
   if (!destino) {
     throw new ErroNegocio("UT_DESTINO_INVALIDA", "A UT de destino está inativa.");
   }
+  if (!item.ut.cep) {
+    throw new ErroNegocio("CEP_ORIGEM_AUSENTE", `A UT de origem (${item.ut.nome}) precisa ter o CEP cadastrado pelo admin.`);
+  }
+  if (!destino.cep) {
+    throw new ErroNegocio("CEP_DESTINO_AUSENTE", `A UT de destino (${destino.nome}) precisa ter o CEP cadastrado pelo admin.`);
+  }
 
-  const carga = consolidarCarga(
+  const carga = prepararCargaFrete(
     {
       larguraCm: decimalOuNulo(item.larguraCm),
       alturaCm: decimalOuNulo(item.alturaCm),
@@ -558,36 +516,50 @@ export async function estimarFreteDoItem(
     },
     entrada.quantidade,
   );
-  const estimativa = await estimarFrete({
-    origem: { cidade: item.ut.cidade, uf: item.ut.uf },
-    destino: { cidade: destino.cidade, uf: destino.uf },
+  const valorUnitarioReposicao = item.valorUnitarioReposicao.toNumber();
+  const compraNova = Math.round(valorUnitarioReposicao * entrada.quantidade * 100) / 100;
+  const cotacoes = await cotarFretes({
+    cepOrigem: item.ut.cep,
+    cepDestino: destino.cep,
+    valorDeclarado: compraNova,
+    pacote: carga.pacote,
+  });
+  if (!cotacoes) {
+    throw new ErroNegocio(
+      "FRETE_INDISPONIVEL",
+      "Não foi possível consultar as transportadoras agora. Tente de novo em instantes.",
+    );
+  }
+
+  const origem = `${item.ut.cidade}/${item.ut.uf}`;
+  const rotuloDestino = `${destino.cidade}/${destino.uf}`;
+  const decisao = await recomendarFrete({
+    origem,
+    destino: rotuloDestino,
     item: { nome: item.nome, marca: item.marca, modelo: item.modelo, categoria: ROTULO_CATEGORIA[item.categoria] },
     quantidade: entrada.quantidade,
     unidade: item.unidade,
-    carga,
-  });
-  if (!estimativa) {
-    throw new ErroNegocio("IA_INDISPONIVEL", "Não foi possível estimar o frete agora. Tente de novo em instantes.");
-  }
-
-  const valorUnitarioReposicao = item.valorUnitarioReposicao.toNumber();
-  const { compraNova, recomendada } = compararOpcoes(valorUnitarioReposicao, entrada.quantidade, estimativa);
-  return {
-    origem: `${item.ut.cidade}/${item.ut.uf}`,
-    destino: `${destino.cidade}/${destino.uf}`,
-    quantidade: entrada.quantidade,
-    distanciaKm: estimativa.distanciaKm,
     carga: {
-      medidasInformadas: carga.medidasInformadas,
       pesoTotalKg: carga.pesoTotalKg,
       volumeTotalM3: carga.volumeTotalM3,
+      maiorDimensaoCm: carga.maiorDimensaoCm,
     },
+    cotacoes,
+    compraNova,
+  });
+
+  return {
+    origem,
+    destino: rotuloDestino,
+    quantidade: entrada.quantidade,
+    cotadoEm: new Date().toISOString(),
+    distanciaKm: decisao?.distanciaKm ?? null,
+    carga: { pesoTotalKg: carga.pesoTotalKg, volumeTotalM3: carga.volumeTotalM3 },
     valorUnitarioReposicao,
     compraNova,
-    transportadora: estimativa.transportadora,
-    veiculoProprio: estimativa.veiculoProprio,
-    recomendada,
-    justificativa: estimativa.justificativa,
+    cotacoes,
+    veiculoProprio: decisao?.veiculoProprio ?? null,
+    recomendacao: decisao?.recomendacao ?? recomendarMenorCusto(cotacoes, compraNova),
   };
 }
 
@@ -599,14 +571,10 @@ export async function listarItensDaUt(usuario: UsuarioLogado): Promise<ItemResum
 
   const itens = (await repository.listarPorUts(uts)).map(paraDto);
   const capas = itens.map((item) => item.fotos[0]?.chaveThumb).filter((chave): chave is string => Boolean(chave));
-  const [urls, pendentes] = await Promise.all([
-    obterUrls(capas, VALIDADE_URLS_SEG),
-    contarPendentesPorItem(itens.map((item) => item.id)),
-  ]);
+  const urls = capas.length > 0 ? await obterUrls(capas, VALIDADE_URLS_SEG) : {};
 
   return itens.map((item) => ({
     ...item,
     urlMiniatura: (item.fotos[0] && urls[item.fotos[0].chaveThumb]) || null,
-    solicitacoesPendentes: pendentes[item.id] ?? 0,
   }));
 }

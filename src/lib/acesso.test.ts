@@ -35,7 +35,7 @@ describe("decidirAcesso: logado", () => {
 
 describe("decidirAcesso: troca de senha obrigatória", () => {
   it("manda qualquer rota do app para /trocar-senha", () => {
-    for (const caminho of ["/", "/vitrine", "/solicitacoes", "/administracao/usuarios"]) {
+    for (const caminho of ["/", "/vitrine", "/meus-itens", "/administracao/usuarios"]) {
       expect(decidirAcesso({ caminho, usuario: trocaPendente })).toEqual({
         acao: "redirecionar",
         para: "/trocar-senha",

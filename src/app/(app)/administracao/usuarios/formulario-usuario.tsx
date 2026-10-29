@@ -208,7 +208,7 @@ export function FormularioUsuario({ usuario, uts, aoCriar, aoEditar, aoCancelar 
             </p>
           ) : (
             <p className="text-xs text-muted-foreground">
-              Opcional. O usuário passa a ter acesso também a estas UTs e escolhe o destino ao solicitar.
+              Opcional. O usuário passa a ter acesso também a estas UTs.
             </p>
           )}
         </fieldset>

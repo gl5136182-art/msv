@@ -61,7 +61,6 @@ export function AjusteQuantidade({
       <p className="text-sm text-muted-foreground">
         Disponível agora: {formatarNumero(quantidadeDisponivel)} de {formatarNumero(quantidadeTotal)}{" "}
         {ROTULO_UNIDADE[unidade].toLowerCase()}. Ajuste quando a sua UT usar parte do estoque.
-        Solicitações já aceitas não são afetadas.
       </p>
 
       <form onSubmit={aoSalvar} noValidate className="flex flex-wrap items-end gap-3">

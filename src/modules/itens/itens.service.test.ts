@@ -10,12 +10,8 @@ vi.mock("@/infra/storage", () => ({
   remover: vi.fn(async () => undefined),
 }));
 vi.mock("@/infra/db", () => ({ db: { $transaction: vi.fn() } }));
+vi.mock("@/infra/frete", () => ({ cotarFretes: vi.fn(), freteDisponivel: vi.fn(() => true) }));
 vi.mock("@/infra/llm", () => ({ completarJson: vi.fn(), iaDisponivel: vi.fn(() => true) }));
-vi.mock("@/modules/solicitacoes/solicitacoes.service", () => ({
-  recusarPendentesDoItemArquivado: vi.fn(async () => []),
-  notificarRecusasDoItemArquivado: vi.fn(async () => undefined),
-  contarPendentesPorItem: vi.fn(async () => ({}) as Record<string, number>),
-}));
 vi.mock("@/modules/uts/uts.service", () => ({
   listarUtsAtivasPorIds: vi.fn(async (ids: string[]) => ids.map((id) => ({ id, rotulo: `UT ${id}` }))),
 }));
@@ -31,12 +27,9 @@ vi.mock("./itens.repository", () => ({
 }));
 
 import { db } from "@/infra/db";
+import { cotarFretes } from "@/infra/frete";
 import { completarJson } from "@/infra/llm";
 import { criarUrlsUpload, obterUrls, remover } from "@/infra/storage";
-import {
-  contarPendentesPorItem,
-  recusarPendentesDoItemArquivado,
-} from "@/modules/solicitacoes/solicitacoes.service";
 import { listarUtsAtivasPorIds } from "@/modules/uts/uts.service";
 
 import * as repository from "./itens.repository";
@@ -45,9 +38,9 @@ import { filtrosVitrineSchema, type EditarItemEntrada, type ItemEntrada } from "
 import {
   ajustarQuantidadeDisponivel,
   alterarArquivamento,
+  cotarFreteDoItem,
   criarItem,
   editarItem,
-  estimarFreteDoItem,
   listarItensDaUt,
   listarVitrine,
   montarBuscaNormalizada,
@@ -521,30 +514,11 @@ describe("alterarArquivamento", () => {
   it("arquivar tira o item da vitrine, mantendo as quantidades", async () => {
     repo.buscarPorId.mockResolvedValue(registro({ quantidadeTotal: 10, quantidadeDisponivel: 6 }));
     await alterarArquivamento(almoxarife, { id: "item1", arquivar: true });
-    expect(repo.atualizarQuantidade).toHaveBeenCalledWith(
-      "item1",
-      { quantidadeDisponivel: 6, quantidadeTotal: 10, status: "arquivado" },
-      TX,
-    );
-  });
-
-  it("arquivar recusa as pendentes do item na mesma transação (regra 4)", async () => {
-    repo.buscarPorId.mockResolvedValue(registro());
-    await alterarArquivamento(almoxarife, { id: "item1", arquivar: true });
-    expect(recusarPendentesDoItemArquivado).toHaveBeenCalledWith("item1", TX);
-    expect(db.$transaction).toHaveBeenCalledTimes(1);
-  });
-
-  it("reativar não mexe nas solicitações", async () => {
-    repo.buscarPorId.mockResolvedValue(registro({ status: "arquivado", quantidadeDisponivel: 6 }));
-    await alterarArquivamento(almoxarife, { id: "item1", arquivar: false });
-    expect(recusarPendentesDoItemArquivado).not.toHaveBeenCalled();
-  });
-
-  it("não recusa as pendentes quando o item já estava arquivado", async () => {
-    repo.buscarPorId.mockResolvedValue(registro({ status: "arquivado" }));
-    await alterarArquivamento(almoxarife, { id: "item1", arquivar: true });
-    expect(recusarPendentesDoItemArquivado).not.toHaveBeenCalled();
+    expect(repo.atualizarQuantidade).toHaveBeenCalledWith("item1", {
+      quantidadeDisponivel: 6,
+      quantidadeTotal: 10,
+      status: "arquivado",
+    });
   });
 
   it("reativar volta a disponível quando há unidades", async () => {
@@ -757,8 +731,6 @@ describe("obterItemDaVitrine", () => {
       criadoEm: "2026-10-13T12:00:00.000Z",
       ut: { id: "ut2", cidade: "Uberaba", uf: "MG" },
       daMinhaUt: false,
-      podeSolicitar: true,
-      utsDestino: [{ id: "ut1", rotulo: "UT ut1" }],
     });
     expect(r.fotos).toEqual([
       { urlPrincipal: `https://dl/${FOTO.chave}`, urlMiniatura: `https://dl/${FOTO.chaveThumb}` },
@@ -776,25 +748,15 @@ describe("obterItemDaVitrine", () => {
     expect(r).toMatchObject({ larguraCm: null, alturaCm: null, profundidadeCm: null, pesoKg: null, lote: null });
   });
 
-  it("item da própria UT não pode ser solicitado (regra 5)", async () => {
+  it("item da própria UT vem marcado", async () => {
     repo.buscarDaVitrine.mockResolvedValue(detalhe({ utId: "ut1" }));
     const r = await obterItemDaVitrine(almoxarife, "item1");
     expect(r.daMinhaUt).toBe(true);
-    expect(r.podeSolicitar).toBe(false);
   });
 
-  it("com várias UTs, o destino pode ser qualquer uma, menos a do item", async () => {
-    repo.buscarDaVitrine.mockResolvedValue(detalhe({ utId: "ut1" }));
-    const r = await obterItemDaVitrine({ ...almoxarife, utsAdicionais: ["ut4", "ut5"] }, "item1");
-    expect(r.daMinhaUt).toBe(true);
-    expect(r.podeSolicitar).toBe(true);
-    expect(r.utsDestino.map((ut) => ut.id)).toEqual(["ut4", "ut5"]);
-  });
-
-  it("admin vê o item, mas não solicita", async () => {
+  it("admin vê o item", async () => {
     const r = await obterItemDaVitrine(admin, "item1");
     expect(r.daMinhaUt).toBe(false);
-    expect(r.podeSolicitar).toBe(false);
   });
 
   it("item fora da vitrine (esgotado, arquivado, UT inativa ou inexistente) não é encontrado", async () => {
@@ -822,16 +784,6 @@ describe("listarItensDaUt", () => {
     expect(r[1].urlMiniatura).toBeNull();
   });
 
-  it("informa quantas solicitações pendentes cada item tem", async () => {
-    repo.listarPorUts.mockResolvedValue([registro(), registro({ id: "item2", fotos: [] })]);
-    vi.mocked(contarPendentesPorItem).mockResolvedValue({ item1: 3 });
-
-    const r = await listarItensDaUt(almoxarife);
-
-    expect(contarPendentesPorItem).toHaveBeenCalledWith(["item1", "item2"]);
-    expect(r.map((item) => item.solicitacoesPendentes)).toEqual([3, 0]);
-  });
-
   it("almoxarife sem UT não vê nada", async () => {
     expect(await listarItensDaUt({ ...almoxarife, utId: null })).toEqual([]);
     expect(repo.listarPorUts).not.toHaveBeenCalled();
@@ -843,56 +795,109 @@ describe("listarItensDaUt", () => {
   });
 });
 
-describe("estimarFreteDoItem", () => {
+describe("cotarFreteDoItem", () => {
   const llm = vi.mocked(completarJson);
+  const frete = vi.mocked(cotarFretes);
   const entrada = { itemId: "item1", utDestinoId: "ut1", quantidade: 2 };
+  const destino = {
+    id: "ut1",
+    codigo: "1",
+    nome: "SEDE",
+    cidade: "Campinas",
+    uf: "SP",
+    cep: "13010000",
+    logradouro: null,
+    numero: null,
+    complemento: null,
+    bairro: null,
+    ativo: true,
+    rotulo: "",
+    criadoEm: "",
+  };
 
   beforeEach(() => {
     repo.buscarDaVitrine.mockResolvedValue({
       ...registro({ utId: "ut2" }),
-      ut: { id: "ut2", nome: "BASE", cidade: "Uberaba", uf: "MG" },
+      ut: { id: "ut2", nome: "BASE", cidade: "Uberaba", uf: "MG", cep: "38400000" },
     } as ItemDetalheVitrineRegistro);
-    vi.mocked(listarUtsAtivasPorIds).mockResolvedValue([
-      { id: "ut1", codigo: "1", nome: "SEDE", cidade: "Campinas", uf: "SP", ativo: true, rotulo: "", criadoEm: "" },
+    vi.mocked(listarUtsAtivasPorIds).mockResolvedValue([destino]);
+    frete.mockReset();
+    frete.mockResolvedValue([
+      { id: 1, transportadora: "Correios", servico: "PAC", valor: 130, prazoDias: 8 },
+      { id: 2, transportadora: "Correios", servico: "Sedex", valor: 180, prazoDias: 3 },
     ]);
     llm.mockReset();
     llm.mockResolvedValue({
       distanciaKm: 480,
-      transportadora: { min: 80, max: 180 },
       veiculoProprio: { min: 900, max: 1000 },
-      justificativa: "Carga pequena.",
+      recomendada: "frete_1",
+      justificativa: "Menor custo de transferência.",
     });
   });
 
-  it("compara compra nova, transportadora e veículo próprio com a carga da quantidade", async () => {
-    const r = await estimarFreteDoItem(colaborador, entrada);
+  it("consulta a API com CEP, produtos e seguro e devolve a recomendação da IA", async () => {
+    const r = await cotarFreteDoItem(colaborador, entrada);
+
+    expect(frete).toHaveBeenCalledWith({
+      cepOrigem: "38400000",
+      cepDestino: "13010000",
+      valorDeclarado: 901.8,
+      pacote: { products: [{ quantity: 2, weight: 2.1, height: 25, width: 30, length: 10 }] },
+    });
     expect(r).toMatchObject({
       origem: "Uberaba/MG",
       destino: "Campinas/SP",
       compraNova: 901.8,
-      carga: { medidasInformadas: true, pesoTotalKg: 4.2, volumeTotalM3: 0.015 },
-      recomendada: "transportadora",
+      carga: { pesoTotalKg: 4.2, volumeTotalM3: 0.015 },
+      veiculoProprio: { min: 900, max: 1000 },
+      recomendacao: { tipo: "cotacao", cotacaoId: 1, origem: "ia" },
     });
+  });
+
+  it("sem IA, mantém as cotações e recomenda o menor custo", async () => {
+    llm.mockResolvedValue(null);
+    const r = await cotarFreteDoItem(colaborador, entrada);
+
+    expect(r.cotacoes).toHaveLength(2);
+    expect(r.veiculoProprio).toBeNull();
+    expect(r.recomendacao).toMatchObject({ tipo: "cotacao", cotacaoId: 1, origem: "menor_custo" });
   });
 
   it("valida destino, quantidade e papel", async () => {
-    await expect(estimarFreteDoItem(colaborador, { ...entrada, utDestinoId: "ut9" })).rejects.toMatchObject({
+    await expect(cotarFreteDoItem(colaborador, { ...entrada, utDestinoId: "ut9" })).rejects.toMatchObject({
       codigo: "UT_DESTINO_INVALIDA",
     });
-    await expect(estimarFreteDoItem(colaborador, { ...entrada, quantidade: 4 })).rejects.toMatchObject({
+    await expect(cotarFreteDoItem(colaborador, { ...entrada, quantidade: 4 })).rejects.toMatchObject({
       codigo: "QUANTIDADE_INDISPONIVEL",
     });
-    await expect(estimarFreteDoItem(admin, entrada)).rejects.toMatchObject({ codigo: "SEM_PERMISSAO" });
+    await expect(cotarFreteDoItem(admin, entrada)).rejects.toMatchObject({ codigo: "SEM_PERMISSAO" });
 
     repo.buscarDaVitrine.mockResolvedValue({
       ...registro({ utId: "ut1" }),
-      ut: { id: "ut1", nome: "SEDE", cidade: "Campinas", uf: "SP" },
+      ut: { id: "ut1", nome: "SEDE", cidade: "Campinas", uf: "SP", cep: "13010000" },
     } as ItemDetalheVitrineRegistro);
-    await expect(estimarFreteDoItem(colaborador, entrada)).rejects.toMatchObject({ codigo: "ITEM_DA_PROPRIA_UT" });
+    await expect(cotarFreteDoItem(colaborador, entrada)).rejects.toMatchObject({ codigo: "ITEM_DA_PROPRIA_UT" });
   });
 
-  it("sem resposta da IA, avisa que não deu para estimar", async () => {
-    llm.mockResolvedValue(null);
-    await expect(estimarFreteDoItem(colaborador, entrada)).rejects.toMatchObject({ codigo: "IA_INDISPONIVEL" });
+  it("exige CEP na origem e no destino", async () => {
+    repo.buscarDaVitrine.mockResolvedValue({
+      ...registro({ utId: "ut2" }),
+      ut: { id: "ut2", nome: "BASE", cidade: "Uberaba", uf: "MG", cep: null },
+    } as ItemDetalheVitrineRegistro);
+    await expect(cotarFreteDoItem(colaborador, entrada)).rejects.toMatchObject({ codigo: "CEP_ORIGEM_AUSENTE" });
+
+    repo.buscarDaVitrine.mockResolvedValue({
+      ...registro({ utId: "ut2" }),
+      ut: { id: "ut2", nome: "BASE", cidade: "Uberaba", uf: "MG", cep: "38400000" },
+    } as ItemDetalheVitrineRegistro);
+    vi.mocked(listarUtsAtivasPorIds).mockResolvedValue([{ ...destino, cep: null }]);
+    await expect(cotarFreteDoItem(colaborador, entrada)).rejects.toMatchObject({ codigo: "CEP_DESTINO_AUSENTE" });
+    expect(frete).not.toHaveBeenCalled();
+  });
+
+  it("não substitui falha da API por estimativa da IA", async () => {
+    frete.mockResolvedValue(null);
+    await expect(cotarFreteDoItem(colaborador, entrada)).rejects.toMatchObject({ codigo: "FRETE_INDISPONIVEL" });
+    expect(llm).not.toHaveBeenCalled();
   });
 });

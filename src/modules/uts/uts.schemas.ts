@@ -2,8 +2,18 @@ import { z } from "zod";
 
 import { ufValida } from "@/lib/ufs";
 
-// UT (SPEC §6.0): código, nome, cidade e UF são todos obrigatórios. Importado também pelo
-// formulário (cliente), por isso este arquivo só depende do Zod e de `lib/`.
+function textoOpcional(limite: number) {
+  return z
+    .string()
+    .trim()
+    .max(limite, `Use no máximo ${limite} caracteres.`)
+    .transform((valor) => valor || null)
+    .nullable()
+    .optional();
+}
+
+// UT (SPEC §6.0): código, nome, cidade e UF são obrigatórios. O endereço é opcional no cadastro;
+// o CEP será exigido ao cotar frete. Importado também pelo formulário (cliente).
 export const utSchema = z.object({
   // Número da UT na Manserv, com pontos (ex.: 06.00.0171.256). Gravado como digitado, só aparado.
   codigo: z
@@ -27,6 +37,18 @@ export const utSchema = z.object({
     .trim()
     .toUpperCase()
     .refine((valor) => ufValida(valor), "Selecione a UF."),
+  cep: z
+    .string()
+    .trim()
+    .transform((valor) => valor.replace(/\D/g, ""))
+    .refine((valor) => valor === "" || /^\d{8}$/.test(valor), "Informe um CEP com 8 dígitos.")
+    .transform((valor) => valor || null)
+    .nullable()
+    .optional(),
+  logradouro: textoOpcional(150),
+  numero: textoOpcional(20),
+  complemento: textoOpcional(100),
+  bairro: textoOpcional(100),
 });
 
 /** O que o schema devolve depois de validar (`uf` já é uma sigla válida). */
@@ -50,6 +72,11 @@ export type UtDto = {
   nome: string;
   cidade: string;
   uf: string;
+  cep: string | null;
+  logradouro: string | null;
+  numero: string | null;
+  complemento: string | null;
+  bairro: string | null;
   ativo: boolean;
   /** "Nome da UT · Cidade/UF". */
   rotulo: string;

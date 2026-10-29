@@ -169,8 +169,8 @@ export function GerenciadorUts({ uts, busca }: { uts: UtDto[]; busca: string }) 
         titulo="Desativar UT"
         consequencia={
           <>
-            <strong>{paraDesativar?.nome}</strong> deixa de aparecer nas listas e na vitrine, e as
-            solicitações pendentes que a envolvem são canceladas. As aceitas seguem até a conclusão.
+            <strong>{paraDesativar?.nome}</strong> deixa de aparecer nas listas e na vitrine. Os itens
+            dela saem da vitrine enquanto ela estiver inativa.
           </>
         }
         rotuloConfirmar="Desativar"

@@ -6,11 +6,26 @@ export type UtRegistro = {
   nome: string;
   cidade: string;
   uf: string;
+  cep: string | null;
+  logradouro: string | null;
+  numero: string | null;
+  complemento: string | null;
+  bairro: string | null;
   ativo: boolean;
   criadoEm: Date;
 };
 
-export type DadosDaUt = { codigo: string; nome: string; cidade: string; uf: string };
+export type DadosDaUt = {
+  codigo: string;
+  nome: string;
+  cidade: string;
+  uf: string;
+  cep?: string | null;
+  logradouro?: string | null;
+  numero?: string | null;
+  complemento?: string | null;
+  bairro?: string | null;
+};
 
 const selecionar = {
   id: true,
@@ -18,6 +33,11 @@ const selecionar = {
   nome: true,
   cidade: true,
   uf: true,
+  cep: true,
+  logradouro: true,
+  numero: true,
+  complemento: true,
+  bairro: true,
   ativo: true,
   criadoEm: true,
 } as const;

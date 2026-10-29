@@ -1,13 +1,8 @@
-import { db } from "@/infra/db";
 import { ErroNegocio } from "@/lib/erro-negocio";
 import { normalizar } from "@/lib/normalizar";
 import { exigirPapel } from "@/lib/permissoes";
 import { rotuloUt } from "@/lib/rotulo-ut";
 import type { UsuarioLogado } from "@/lib/usuario-logado";
-import {
-  cancelarPendentesDaUtDesativada,
-  notificarCancelamentosDaUtDesativada,
-} from "@/modules/solicitacoes/solicitacoes.service";
 
 import * as repository from "./uts.repository";
 import type { UtRegistro } from "./uts.repository";
@@ -20,7 +15,6 @@ import type {
 } from "./uts.schemas";
 
 // Administração de UTs (SPEC §6.0). Só o admin cria, edita e ativa/desativa. Não há exclusão.
-// Desativar uma UT cancela as solicitações pendentes que a envolvem (regra 13).
 
 const MENSAGEM_CODIGO_DUPLICADO = "Já existe uma UT com este código.";
 
@@ -31,6 +25,11 @@ export function paraDto(ut: UtRegistro): UtDto {
     nome: ut.nome,
     cidade: ut.cidade,
     uf: ut.uf,
+    cep: ut.cep,
+    logradouro: ut.logradouro,
+    numero: ut.numero,
+    complemento: ut.complemento,
+    bairro: ut.bairro,
     ativo: ut.ativo,
     rotulo: rotuloUt(ut),
     criadoEm: ut.criadoEm.toISOString(),
@@ -93,17 +92,7 @@ export async function editarUt(usuario: UsuarioLogado, entrada: EditarUtEntrada)
 export async function alterarStatusUt(usuario: UsuarioLogado, entrada: AlterarStatusUtEntrada): Promise<UtDto> {
   exigirPapel(usuario, "admin");
   await buscarOuFalhar(entrada.id);
-
-  // Desativar cancela as pendentes que envolvem a UT (regra 13); as duas coisas valem juntas.
-  const { ut, canceladas } = await db.$transaction(async (tx) => {
-    const ut = await repository.definirAtivo(entrada.id, entrada.ativo, tx);
-    const canceladas = entrada.ativo ? [] : await cancelarPendentesDaUtDesativada(entrada.id, tx);
-    return { ut, canceladas };
-  });
-
-  // Depois do commit: avisar os solicitantes nunca desfaz nem quebra a desativação.
-  await notificarCancelamentosDaUtDesativada(canceladas);
-  return paraDto(ut);
+  return paraDto(await repository.definirAtivo(entrada.id, entrada.ativo));
 }
 
 /** "Nome · Cidade/UF" da UT, ou `null` quando o usuário não tem UT (admin) ou ela não existe. */
@@ -141,7 +130,17 @@ async function buscarOuFalhar(id: string): Promise<UtRegistro> {
 }
 
 function dadosDaUt(entrada: UtEntrada) {
-  return { codigo: entrada.codigo, nome: entrada.nome, cidade: entrada.cidade, uf: entrada.uf };
+  return {
+    codigo: entrada.codigo,
+    nome: entrada.nome,
+    cidade: entrada.cidade,
+    uf: entrada.uf,
+    cep: entrada.cep ?? null,
+    logradouro: entrada.logradouro ?? null,
+    numero: entrada.numero ?? null,
+    complemento: entrada.complemento ?? null,
+    bairro: entrada.bairro ?? null,
+  };
 }
 
 // Duas requisições simultâneas com o mesmo código passam pela checagem acima; o índice único

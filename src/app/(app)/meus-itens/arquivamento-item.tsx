@@ -36,7 +36,7 @@ export function ArquivamentoItem({ itemId, status }: { itemId: string; status: S
       <p className="text-sm text-muted-foreground">
         {arquivado
           ? "Este item não aparece na vitrine. Reative para que outras UTs voltem a encontrá-lo."
-          : "Retira o item da vitrine. Solicitações pendentes são recusadas automaticamente; as já aceitas seguem normalmente. Você pode reativar depois."}
+          : "Retira o item da vitrine. Você pode reativar depois."}
       </p>
       <div>
         <Button
@@ -53,7 +53,7 @@ export function ArquivamentoItem({ itemId, status }: { itemId: string; status: S
         aberto={confirmando}
         aoMudar={setConfirmando}
         titulo="Arquivar item"
-        consequencia="O item sai da vitrine e as solicitações pendentes são recusadas com o motivo “Item retirado da vitrine”. As já aceitas seguem normalmente."
+        consequencia="O item sai da vitrine e deixa de aparecer para as outras UTs."
         rotuloConfirmar="Arquivar"
         destrutiva
         aoConfirmar={executar}
