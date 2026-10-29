@@ -1,9 +1,9 @@
-// Seed de demonstração (Fase 6, SPEC §9): 12 UTs `DEMO-`, ≈150 itens com fotos genéricas e
-// ≈60 solicitações concluídas em 12 meses. Só cria dados em UTs `DEMO-`; as UTs reais não
-// recebem nada. Para repetir, rode `npm run seed:demo:limpar` antes.
+// Seed de demonstração (Fase 6, SPEC §9): 12 UTs `DEMO-` e ≈150 itens com fotos genéricas.
+// Só cria dados em UTs `DEMO-`; as UTs reais não recebem nada. Para repetir, rode
+// `npm run seed:demo:limpar` antes.
 //
-// Os usuários de demonstração não têm conta (senha): existem só como donos dos itens e autores das
-// solicitações. Para ver o dashboard, entre como admin ("Todas as UTs").
+// Os usuários de demonstração não têm conta (senha): existem só como donos dos itens.
+// Para ver o dashboard, entre como admin ("Todas as UTs").
 
 import "dotenv/config";
 
@@ -99,31 +99,12 @@ async function semearDemo(): Promise<void> {
           })),
         ),
       });
-
-      await tx.solicitacao.createMany({
-        data: conjunto.solicitacoes.map((s) => ({
-          id: s.id,
-          itemId: s.itemId,
-          solicitanteId: s.solicitanteId,
-          utDestinoId: idDaUt(s.utDestinoCodigo),
-          quantidade: s.quantidade,
-          observacao: s.observacao,
-          status: "concluida" as const,
-          valorUnitarioSnapshot: s.valorUnitarioSnapshot,
-          custoFrete: s.custoFrete,
-          respondidaPorId: s.respondidaPorId,
-          respondidaEm: s.respondidaEm,
-          concluidaPorId: s.concluidaPorId,
-          concluidaEm: s.concluidaEm,
-          criadoEm: s.criadoEm,
-        })),
-      });
     },
     { timeout: 120_000, maxWait: 30_000 },
   );
 
   console.log(
-    `seed:demo: ${conjunto.uts.length} UTs, ${conjunto.usuarios.length} usuários, ${conjunto.itens.length} itens e ${conjunto.solicitacoes.length} solicitações concluídas criados.`,
+    `seed:demo: ${conjunto.uts.length} UTs, ${conjunto.usuarios.length} usuários e ${conjunto.itens.length} itens criados.`,
   );
 }
 

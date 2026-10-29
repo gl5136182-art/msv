@@ -3,18 +3,10 @@ import { rotuloUt } from "@/lib/rotulo-ut";
 import { temPapel, type UsuarioLogado } from "@/lib/usuario-logado";
 
 import {
-  calcularEconomia,
-  calcularFreteMedio,
-  calcularTaxaReaproveitamento,
-  calcularTempoMedioDias,
-  cedeuRecebeu,
   DIAS_BASE_SIMULADOR,
-  economiaPorMes,
+  FRETE_MEDIO_PADRAO,
   intervaloDoPeriodo,
-  mesesDoIntervalo,
   resumirEstoque,
-  somarUnidades,
-  somarUnidadesCadastradas,
   somarValorCadastrado,
   valorParadoPorCategoria,
   valorParadoPorUt,
@@ -51,24 +43,14 @@ export async function obterDashboard(
   const desde90Dias = new Date(agora.getTime() - DIAS_BASE_SIMULADOR * MS_POR_DIA);
   const desdeCadastros = inicio < desde90Dias ? inicio : desde90Dias;
 
-  const [disponiveis, cadastrados, transferencias, uts] = await Promise.all([
+  const [disponiveis, cadastrados, uts] = await Promise.all([
     repository.listarItensDisponiveis(filtro),
     repository.listarItensCadastradosDesde(desdeCadastros, filtro),
-    repository.listarTransferenciasConcluidas(inicio, fim, filtro),
     repository.listarUtsParaFiltro(utId),
   ]);
 
-  const cadastradosNoPeriodo = cadastrados.filter((item) => item.criadoEm >= inicio);
   const cadastradosEm90Dias = cadastrados.filter((item) => item.criadoEm >= desde90Dias);
-
-  // Taxa de reaproveitamento: o que a UT cedeu ÷ o que ela cadastrou. Com filtro de UT, a UT
-  // recebedora não entra no numerador, senão uma UT que só recebe passaria de 100%.
-  const cedidas = utId ? transferencias.filter((t) => t.origem.id === utId) : transferencias;
-  const unidadesCedidas = somarUnidades(cedidas);
-  const unidadesCadastradas = somarUnidadesCadastradas(cadastradosNoPeriodo);
-
   const estoque = resumirEstoque(disponiveis);
-  const frete = calcularFreteMedio(transferencias);
 
   return {
     filtros: { periodo: filtros.periodo, utId, categoria },
@@ -77,26 +59,17 @@ export async function obterDashboard(
     kpis: {
       itensNaVitrine: { itens: estoque.itens, unidades: estoque.unidades },
       valorParado: estoque.valorParado,
-      economia: calcularEconomia(transferencias),
-      transferencias: transferencias.length,
-      tempoMedioDias: calcularTempoMedioDias(transferencias),
-      taxaReaproveitamento: calcularTaxaReaproveitamento(unidadesCedidas, unidadesCadastradas),
-      unidadesCedidas,
-      unidadesCadastradas,
     },
     graficos: {
-      economiaPorMes: economiaPorMes(transferencias, mesesDoIntervalo(inicio, fim)),
       valorParadoPorUt: valorParadoPorUt(disponiveis),
       valorParadoPorCategoria: valorParadoPorCategoria(disponiveis),
-      cedeuRecebeu: cedeuRecebeu(transferencias),
     },
     simulador: {
       valorParado: estoque.valorParado,
       itensDisponiveis: estoque.itens,
       valorCadastrado90d: somarValorCadastrado(cadastradosEm90Dias),
       itensCadastrados90d: cadastradosEm90Dias.length,
-      freteMedioPadrao: frete.valor,
-      freteDoHistorico: frete.doHistorico,
+      freteMedioPadrao: FRETE_MEDIO_PADRAO,
     },
     geradoEm: agora.toISOString(),
   };

@@ -37,4 +37,33 @@ describe("utSchema", () => {
     expect(mensagens({ ...valida, codigo: "1".repeat(21) })).toContain("O código deve ter no máximo 20 caracteres.");
     expect(mensagens({ ...valida, codigo: "06 00" })).toContain("Use só letras, números, ponto e hífen no código.");
   });
+
+  it("normaliza o CEP, aceita endereço vazio e transforma campos vazios em null", () => {
+    const r = utSchema.parse({
+      ...valida,
+      cep: " 38400-000 ",
+      logradouro: " Rua Teste ",
+      numero: "",
+      complemento: "",
+      bairro: " Centro ",
+    });
+    expect(r).toMatchObject({ cep: "38400000", logradouro: "Rua Teste", numero: null, complemento: null, bairro: "Centro" });
+    expect(utSchema.parse(valida).cep).toBeUndefined();
+  });
+
+  it("aceita o endereço já normalizado pelo formulário ao validar novamente na action", () => {
+    const endereco = { cep: "38022200", logradouro: "Av. Guilherme Ferreira", numero: "2480", complemento: null, bairro: "Bom Retiro" };
+    expect(utSchema.parse({ ...valida, ...endereco })).toMatchObject(endereco);
+    expect(utSchema.parse({ ...valida, cep: null, logradouro: null, numero: null, complemento: null, bairro: null })).toMatchObject({
+      cep: null,
+      logradouro: null,
+      numero: null,
+      complemento: null,
+      bairro: null,
+    });
+  });
+
+  it("recusa CEP incompleto", () => {
+    expect(mensagens({ ...valida, cep: "38400-00" })).toContain("Informe um CEP com 8 dígitos.");
+  });
 });

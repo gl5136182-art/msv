@@ -315,11 +315,8 @@ export type ItemDto = {
 /** Item para a tela de edição: inclui as URLs assinadas das miniaturas, por chave da miniatura. */
 export type ItemParaEdicaoDto = ItemDto & { previas: Record<string, string> };
 
-/**
- * Linha da lista "Meus itens": o item, a URL assinada da miniatura da capa e quantas
- * solicitações pendentes ele tem (SPEC §6.1).
- */
-export type ItemResumoDto = ItemDto & { urlMiniatura: string | null; solicitacoesPendentes: number };
+/** Linha da lista "Meus itens": o item e a URL assinada da miniatura da capa. */
+export type ItemResumoDto = ItemDto & { urlMiniatura: string | null };
 
 // ---------------------------------------------------------------------------------------
 // Vitrine (SPEC §6.3)
@@ -374,7 +371,7 @@ export type ItemVitrineDto = {
   quantidadeDisponivel: number;
   valorUnitarioReposicao: number;
   ut: { id: string; nome: string; cidade: string; uf: string };
-  /** Item da UT de quem está olhando: leva a etiqueta "Sua UT" e não pode ser solicitado. */
+  /** Item da UT de quem está olhando: leva a etiqueta "Sua UT". */
   daMinhaUt: boolean;
   urlMiniatura: string | null;
 };
@@ -403,44 +400,48 @@ export type ItemDetalheVitrineDto = {
   criadoEm: string;
   ut: { id: string; nome: string; cidade: string; uf: string };
   daMinhaUt: boolean;
-  /** Colaborador ou almoxarife de outra UT (SPEC §3, regra 5; o admin não solicita). */
-  podeSolicitar: boolean;
-  /**
-   * UTs do usuário que podem receber o item (ativas e diferentes da UT do item), a principal
-   * primeiro. Com mais de uma, o solicitante escolhe o destino.
-   */
+  /** Colaborador ou almoxarife com ao menos uma UT de destino diferente da UT do item. */
+  podeCalcularFrete: boolean;
+  /** UTs ativas do usuário que podem receber o item, a principal primeiro. */
   utsDestino: Array<{ id: string; rotulo: string }>;
-  /** A IA está configurada: sem ela, o botão "Calcular frete" não aparece. */
-  iaDisponivel: boolean;
+  /** A API de frete está configurada; a IA é opcional para a recomendação. */
+  freteDisponivel: boolean;
   /** Fotos na ordem do cadastro (a primeira é a capa), com URL assinada da principal e da miniatura. */
   fotos: Array<{ urlPrincipal: string | null; urlMiniatura: string | null }>;
 };
 
-/** "Calcular frete" na vitrine (SPEC §6.6): para qual UT e quantas unidades. */
-export const estimarFreteSchema = z.object({
+/** "Calcular frete" na vitrine (SPEC §6.7): para qual UT e quantas unidades. */
+export const cotarFreteSchema = z.object({
   itemId: z.string().min(1),
   utDestinoId: z.string().min(1, "Selecione a UT de destino."),
   quantidade: z.number().int().min(1, "Informe a quantidade."),
 });
-export type EstimarFreteEntrada = z.infer<typeof estimarFreteSchema>;
+export type CotarFreteEntrada = z.infer<typeof cotarFreteSchema>;
 
-/** Estimativa de frete: compra nova (calculada) × transportadora e veículo próprio (IA). */
-export type EstimativaFreteDto = {
+/** Cotações reais × compra nova × veículo próprio estimado pela IA. */
+export type CotacaoFreteDto = {
   origem: string;
   destino: string;
   quantidade: number;
-  distanciaKm: number;
-  carga: {
-    medidasInformadas: boolean;
-    pesoTotalKg: number | null;
-    volumeTotalM3: number | null;
-  };
+  cotadoEm: string;
+  distanciaKm: number | null;
+  carga: { pesoTotalKg: number; volumeTotalM3: number };
   valorUnitarioReposicao: number;
   compraNova: number;
-  transportadora: { min: number; max: number };
-  veiculoProprio: { min: number; max: number };
-  recomendada: "compra" | "transportadora" | "veiculo";
-  justificativa: string;
+  cotacoes: Array<{
+    id: number;
+    transportadora: string;
+    servico: string;
+    valor: number;
+    prazoDias: number | null;
+  }>;
+  veiculoProprio: { min: number; max: number } | null;
+  recomendacao: {
+    tipo: "cotacao" | "veiculo" | "compra";
+    cotacaoId: number | null;
+    origem: "ia" | "menor_custo";
+    justificativa: string;
+  };
 };
 
 export type PaginaVitrineDto = {

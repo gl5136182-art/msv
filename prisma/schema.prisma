@@ -90,33 +90,6 @@ enum DimensoesOrigem {
   @@map("dimensoes_origem")
 }
 
-/// Ciclo da solicitação (SPEC §3, "Status"):
-/// pendente → aceita | recusada | cancelada; aceita → concluida | cancelada.
-enum StatusSolicitacao {
-  pendente
-  aceita
-  recusada
-  cancelada
-  concluida
-
-  @@map("status_solicitacao")
-}
-
-/// Ciclo da requisição de compra: rascunho → aberta → atendida_reuso | parcial | enviada_compra
-/// | cancelada. O encerramento é manual, pelo solicitante (sem aprovação).
-enum StatusRequisicao {
-  rascunho
-  aberta
-  /// Tudo resolvido com itens de outras UTs.
-  atendida_reuso
-  /// Parte por reuso, o resto comprado.
-  parcial
-  enviada_compra
-  cancelada
-
-  @@map("status_requisicao")
-}
-
 // ---------------------------------------------------------------------------------------
 // UT (SPEC §5, §6.0)
 // ---------------------------------------------------------------------------------------
@@ -128,14 +101,18 @@ model Ut {
   nome     String   @db.VarChar(150)
   cidade   String   @db.VarChar(100)
   uf       String   @db.Char(2)
+  /// Endereço opcional; o CEP é exigido pelo service ao cotar frete.
+  cep         String? @db.VarChar(8)
+  logradouro  String? @db.VarChar(150)
+  numero      String? @db.VarChar(20)
+  complemento String? @db.VarChar(100)
+  bairro      String? @db.VarChar(100)
   ativo    Boolean  @default(true)
   criadoEm DateTime @default(now()) @map("criado_em")
 
   usuarios           Usuario[]
   usuariosAdicionais UsuarioUtAdicional[]
   itens              Item[]
-  solicitacoes       Solicitacao[]
-  requisicoes        Requisicao[]
 
   @@map("ut")
 }
@@ -199,8 +176,6 @@ model Item {
   ut            Ut                       @relation(fields: [utId], references: [id])
   criadoPor     Usuario                  @relation("ItensCriados", fields: [criadoPorId], references: [id])
   fotos         ItemFoto[]
-  solicitacoes  Solicitacao[]
-  recomendacoes RequisicaoRecomendacao[]
 
   @@index([status, utId])
   @@index([categoria])
@@ -225,60 +200,16 @@ model ItemFoto {
 }
 
 // ---------------------------------------------------------------------------------------
-// Solicitações e notificações (SPEC §3 regras 5 a 13, §5, §6.4)
+// Notificações (SPEC §6.4)
 // ---------------------------------------------------------------------------------------
-
-model Solicitacao {
-  id            String @id @default(cuid())
-  itemId        String @map("item_id")
-  solicitanteId String @map("solicitante_id")
-  /// UT de quem pede (o destino do item). A UT de origem é `item.utId`.
-  utDestinoId   String @map("ut_destino_id")
-
-  quantidade Int
-  observacao String? @db.VarChar(500)
-
-  status StatusSolicitacao @default(pendente)
-
-  /// Valor de reposição do item no momento do aceite (SPEC §3, regra 8). Nulo até aceitar.
-  valorUnitarioSnapshot Decimal? @map("valor_unitario_snapshot") @db.Decimal(14, 2)
-  /// Obrigatório ao recusar (inclusive nas recusas automáticas).
-  motivoRecusa          String?  @map("motivo_recusa") @db.VarChar(500)
-  /// Pago pela UT de destino, informado ao concluir (SPEC §3, regra 10).
-  custoFrete            Decimal  @default(0) @map("custo_frete") @db.Decimal(14, 2)
-
-  /// Nulos nas recusas e cancelamentos automáticos (item arquivado ou esgotado, UT desativada).
-  respondidaPorId String?   @map("respondida_por_id")
-  respondidaEm    DateTime? @map("respondida_em")
-  concluidaPorId  String?   @map("concluida_por_id")
-  concluidaEm     DateTime? @map("concluida_em")
-  canceladaPorId  String?   @map("cancelada_por_id")
-  canceladaEm     DateTime? @map("cancelada_em")
-
-  criadoEm DateTime @default(now()) @map("criado_em")
-
-  item          Item     @relation(fields: [itemId], references: [id])
-  solicitante   Usuario  @relation("SolicitacoesFeitas", fields: [solicitanteId], references: [id])
-  utDestino     Ut       @relation(fields: [utDestinoId], references: [id])
-  respondidaPor Usuario? @relation("SolicitacoesRespondidas", fields: [respondidaPorId], references: [id])
-  concluidaPor  Usuario? @relation("SolicitacoesConcluidas", fields: [concluidaPorId], references: [id])
-  canceladaPor  Usuario? @relation("SolicitacoesCanceladas", fields: [canceladaPorId], references: [id])
-
-  @@index([itemId, status])
-  @@index([utDestinoId, status])
-  @@index([status, concluidaEm])
-  @@index([solicitanteId])
-  @@map("solicitacao")
-}
 
 model Notificacao {
   id        String   @id @default(cuid())
   usuarioId String   @map("usuario_id")
-  /// Código do evento (ex.: `solicitacao_nova`, `solicitacao_aceita`). Os valores ficam no
-  /// módulo `notificacoes`; texto e não enum para novos eventos não exigirem migration.
+  /// Código do evento. Texto e não enum para novos eventos não exigirem migration.
   tipo      String   @db.VarChar(40)
   mensagem  String   @db.VarChar(300)
-  /// Rota interna aberta ao clicar (ex.: `/solicitacoes`).
+  /// Rota interna aberta ao clicar.
   link      String   @db.VarChar(255)
   lida      Boolean  @default(false)
   criadoEm  DateTime @default(now()) @map("criado_em")
@@ -287,79 +218,6 @@ model Notificacao {
 
   @@index([usuarioId, lida])
   @@map("notificacao")
-}
-
-// ---------------------------------------------------------------------------------------
-// Requisições de compra com recomendação de reuso pela IA (SPEC §6.6)
-// ---------------------------------------------------------------------------------------
-
-/// Simula a requisição de compra do sistema da empresa. Ao abrir, a IA procura na vitrine itens
-/// de outras UTs que atendam cada linha; o que não houver para reuso segue como compra.
-model Requisicao {
-  id            String           @id @default(cuid())
-  /// Número de exibição (REQ-000123).
-  numero        Int              @unique @default(autoincrement())
-  solicitanteId String           @map("solicitante_id")
-  /// UT que requisita (uma das UTs do solicitante). Itens dela nunca são recomendados.
-  utId          String           @map("ut_id")
-  justificativa String?          @db.VarChar(500)
-  status        StatusRequisicao @default(rascunho)
-
-  /// Última análise da vitrine. Nulo até a requisição ser aberta.
-  analisadaEm  DateTime? @map("analisada_em")
-  /// `false` quando a última análise rodou sem IA (sem chave ou com falha do provedor).
-  analiseComIa Boolean   @default(false) @map("analise_com_ia")
-  criadoEm     DateTime  @default(now()) @map("criado_em")
-  atualizadoEm DateTime  @updatedAt @map("atualizado_em")
-
-  solicitante Usuario           @relation(fields: [solicitanteId], references: [id])
-  ut          Ut                @relation(fields: [utId], references: [id])
-  linhas      RequisicaoLinha[]
-
-  @@index([solicitanteId])
-  @@index([utId, status])
-  @@index([solicitanteId, analisadaEm])
-  @@map("requisicao")
-}
-
-/// Uma linha da requisição: o que se quer comprar, em texto livre, e quanto.
-model RequisicaoLinha {
-  id           String  @id @default(cuid())
-  requisicaoId String  @map("requisicao_id")
-  ordem        Int
-  descricao    String  @db.VarChar(300)
-  quantidade   Int
-  unidade      Unidade
-  observacao   String? @db.VarChar(300)
-
-  requisicao    Requisicao               @relation(fields: [requisicaoId], references: [id], onDelete: Cascade)
-  recomendacoes RequisicaoRecomendacao[]
-
-  @@index([requisicaoId])
-  @@map("requisicao_linha")
-}
-
-/// Item da vitrine recomendado para uma linha. Refeito a cada análise. Os dados do item (nome,
-/// UT, disponibilidade) são lidos na hora de exibir, para mostrar a situação atual.
-model RequisicaoRecomendacao {
-  id                 String @id @default(cuid())
-  linhaId            String @map("linha_id")
-  itemId             String @map("item_id")
-  /// Quanto deste item cobre a linha (alocado pelo código, nunca acima do disponível na análise).
-  /// 0 = alternativa: o item também atende, em outra UT, mas a quantidade já foi coberta.
-  quantidadeSugerida Int    @map("quantidade_sugerida")
-  /// `exata` ou `similar`.
-  aderencia          String @db.VarChar(10)
-  justificativa      String @db.VarChar(300)
-  ordem              Int
-
-  linha RequisicaoLinha @relation(fields: [linhaId], references: [id], onDelete: Cascade)
-  /// Cascade: os scripts de limpeza de demo/inventário apagam itens.
-  item  Item            @relation(fields: [itemId], references: [id], onDelete: Cascade)
-
-  @@index([linhaId])
-  @@index([itemId])
-  @@map("requisicao_recomendacao")
 }
 
 // ---------------------------------------------------------------------------------------
@@ -397,19 +255,14 @@ model Usuario {
   accounts     Account[]
   itensCriados Item[]    @relation("ItensCriados")
 
-  solicitacoesFeitas      Solicitacao[] @relation("SolicitacoesFeitas")
-  solicitacoesRespondidas Solicitacao[] @relation("SolicitacoesRespondidas")
-  solicitacoesConcluidas  Solicitacao[] @relation("SolicitacoesConcluidas")
-  solicitacoesCanceladas  Solicitacao[] @relation("SolicitacoesCanceladas")
-  notificacoes            Notificacao[]
-  requisicoes             Requisicao[]
+  notificacoes Notificacao[]
 
   @@index([utId])
   @@map("usuario")
 }
 
-/// Vínculo do usuário com outras UTs além da principal (`usuario.utId`). Quem tem mais de uma UT
-/// escolhe a de destino ao solicitar; o almoxarife responde pelos itens de todas elas.
+/// Vínculo do usuário com outras UTs além da principal (`usuario.utId`); dá acesso aos itens
+/// e às telas dessas UTs.
 model UsuarioUtAdicional {
   usuarioId String   @map("usuario_id")
   utId      String   @map("ut_id")

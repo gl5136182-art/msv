@@ -34,11 +34,11 @@ export function Simulador({ base }: { base: SimuladorBaseDto }) {
     <section className="flex flex-col gap-3 rounded-md bg-card p-2.5" aria-label="Simulação">
       <h2 className="text-[13px] font-medium">Simulação: não é valor realizado</h2>
 
-      <div className="flex flex-col gap-4">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] lg:items-center lg:gap-6">
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <label htmlFor={idPercentual} className="flex justify-between text-xs font-medium">
-              <span>% do valor parado que seria reaproveitado</span>
+              <span>% do valor ocioso que seria reaproveitado</span>
               <span className="font-numeros text-sm">{percentual}%</span>
             </label>
             <input
@@ -65,14 +65,12 @@ export function Simulador({ base }: { base: SimuladorBaseDto }) {
               onChange={(evento) => setFreteTexto(mascararMoeda(evento.target.value))}
             />
             <p className="text-xs font-light text-muted-foreground">
-              {base.freteDoHistorico
-                ? "Padrão: média real das transferências concluídas."
-                : "Padrão: R$ 150,00, porque ainda não há transferência concluída."}
+              Padrão: R$ 150,00 por transferência. Ajuste se o seu frete habitual for outro.
             </p>
           </div>
         </div>
 
-        <ul className="flex flex-col gap-2">
+        <ul className="grid gap-2 md:grid-cols-2">
           <li className="flex flex-col gap-1 rounded-md border border-border p-3">
             <p className="font-numeros text-[28px] leading-tight text-primary lg:text-[32px]">
               {formatarMoedaResumida(projecao.imediata)}

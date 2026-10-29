@@ -37,29 +37,9 @@ export type KpisDto = {
   itensNaVitrine: { itens: number; unidades: number };
   /** Σ quantidade disponível × valor de reposição. */
   valorParado: number;
-  /** Custo de compra evitado das concluídas no período: líquido = bruto − frete. */
-  economia: { liquida: number; bruta: number; frete: number };
-  transferencias: number;
-  /** Dias entre o cadastro do item e a conclusão; `null` sem transferências. */
-  tempoMedioDias: number | null;
-  /** Unidades cedidas ÷ unidades cadastradas no período (0 a 1+); `null` sem cadastros. */
-  taxaReaproveitamento: number | null;
-  unidadesCedidas: number;
-  unidadesCadastradas: number;
-};
-
-export type PontoMensalDto = {
-  /** `aaaa-mm` no fuso de São Paulo. */
-  mes: string;
-  /** `jan/26`. */
-  rotulo: string;
-  liquida: number;
-  acumulada: number;
 };
 
 export type BarraDto = { id: string; rotulo: string; valor: number };
-
-export type CedeuRecebeuDto = { id: string; rotulo: string; cedeu: number; recebeu: number };
 
 /** Base do simulador (SPEC §6.5); a conta é refeita no cliente a cada movimento do slider. */
 export type SimuladorBaseDto = {
@@ -67,9 +47,7 @@ export type SimuladorBaseDto = {
   itensDisponiveis: number;
   valorCadastrado90d: number;
   itensCadastrados90d: number;
-  /** Média real do frete das concluídas, ou R$ 150 sem histórico. */
   freteMedioPadrao: number;
-  freteDoHistorico: boolean;
 };
 
 export type DashboardDto = {
@@ -79,10 +57,8 @@ export type DashboardDto = {
   uts: UtFiltroDto[];
   kpis: KpisDto;
   graficos: {
-    economiaPorMes: PontoMensalDto[];
     valorParadoPorUt: BarraDto[];
     valorParadoPorCategoria: BarraDto[];
-    cedeuRecebeu: CedeuRecebeuDto[];
   };
   simulador: SimuladorBaseDto;
   geradoEm: string;

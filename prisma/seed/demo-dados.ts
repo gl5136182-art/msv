@@ -3,13 +3,12 @@
 // (a conferência manual dos indicadores fica reprodutível). Quem grava é prisma/seed/demo.ts.
 //
 // Tudo fica em UTs com código `DEMO-NN`. Os usuários de demonstração existem só como donos dos
-// itens e autores das solicitações: não têm conta (senha), então ninguém consegue entrar com eles.
+// itens: não têm conta (senha), então ninguém consegue entrar com eles.
 
 export const PREFIXO_UT_DEMO = "DEMO-";
 
 const QUANTIDADE_UTS = 12;
 const QUANTIDADE_ITENS = 150;
-const QUANTIDADE_SOLICITACOES = 60;
 const QUANTIDADE_FOTOS_GENERICAS = 6;
 
 const MS_HORA = 60 * 60 * 1000;
@@ -87,13 +86,6 @@ const DESCRICOES = [
   "Retirada no almoxarifado da UT.",
 ];
 
-const OBSERVACOES = [
-  "Preciso para a parada programada do próximo mês.",
-  "Substitui um equipamento que quebrou.",
-  "Vamos usar na nova frente de serviço.",
-  "Atende uma demanda do cliente.",
-];
-
 const NOMES = ["Ana", "Bruno", "Carla", "Diego", "Elisa", "Fábio", "Gabriela", "Hugo", "Isabela", "João", "Karina", "Lucas"];
 const SOBRENOMES = ["Almeida", "Barros", "Cardoso", "Dias", "Esteves", "Ferreira", "Gomes", "Henrique", "Ibrahim", "Lima", "Moreira", "Nunes"];
 
@@ -141,27 +133,10 @@ export type DemoItem = {
   fotos: number[];
 };
 
-export type DemoSolicitacao = {
-  id: string;
-  itemId: string;
-  solicitanteId: string;
-  utDestinoCodigo: string;
-  respondidaPorId: string;
-  concluidaPorId: string;
-  quantidade: number;
-  observacao: string | null;
-  valorUnitarioSnapshot: number;
-  custoFrete: number;
-  criadoEm: Date;
-  respondidaEm: Date;
-  concluidaEm: Date;
-};
-
 export type ConjuntoDemo = {
   uts: DemoUt[];
   usuarios: DemoUsuario[];
   itens: DemoItem[];
-  solicitacoes: DemoSolicitacao[];
   quantidadeFotosGenericas: number;
 };
 
@@ -216,7 +191,6 @@ export function gerarConjuntoDemo(agora: Date): ConjuntoDemo {
   const uts: DemoUt[] = [];
   const usuarios: DemoUsuario[] = [];
   const almoxarifePorUt = new Map<string, DemoUsuario>();
-  const colaboradorPorUt = new Map<string, DemoUsuario>();
 
   for (let i = 0; i < QUANTIDADE_UTS; i++) {
     const numero = doisDigitos(i + 1);
@@ -235,7 +209,7 @@ export function gerarConjuntoDemo(agora: Date): ConjuntoDemo {
         utCodigo: codigo,
       };
       usuarios.push(usuario);
-      (papel === "almoxarife" ? almoxarifePorUt : colaboradorPorUt).set(codigo, usuario);
+      if (papel === "almoxarife") almoxarifePorUt.set(codigo, usuario);
     }
   }
 
@@ -289,60 +263,15 @@ export function gerarConjuntoDemo(agora: Date): ConjuntoDemo {
     });
   }
 
-  // Solicitações concluídas, espalhadas nos últimos 12 meses --------------------------------
-  const limiteInferior = agora.getTime() - 350 * MS_DIA;
-  const limiteSuperior = agora.getTime() - 1 * MS_DIA;
-  const solicitacoes: DemoSolicitacao[] = [];
-
-  let tentativas = 0;
-  while (solicitacoes.length < QUANTIDADE_SOLICITACOES && tentativas < 5000) {
-    tentativas++;
-    const item = sortear(itens);
-    if (item.quantidadeDisponivel <= 0 || item.status === "arquivado") continue;
-
-    const criadoEm = new Date(item.criadoEm.getTime() + entre(1 / 24, 45) * MS_DIA);
-    const respondidaEm = new Date(criadoEm.getTime() + entre(1, 48) * MS_HORA);
-    const concluidaEm = new Date(respondidaEm.getTime() + entre(2, 30) * MS_DIA);
-    if (concluidaEm.getTime() > limiteSuperior || concluidaEm.getTime() < limiteInferior) continue;
-
-    const destinos = uts.filter((ut) => ut.codigo !== item.utCodigo);
-    const destino = sortear(destinos);
-    const origem = uts.find((ut) => ut.codigo === item.utCodigo)!;
-    const solicitante = aleatorio() < 0.5 ? colaboradorPorUt.get(destino.codigo)! : almoxarifePorUt.get(destino.codigo)!;
-
-    const maximo = Math.max(1, Math.ceil(item.quantidadeTotal * 0.5));
-    const quantidade = Math.min(inteiro(1, maximo), item.quantidadeDisponivel);
-    item.quantidadeDisponivel -= quantidade;
-
-    // Frete: base + peso, mais barato dentro do mesmo estado; 1 em 8 é retirada sem custo.
-    const pesoTotal = (item.lote?.pesoKg ?? item.pesoKg * quantidade) || item.pesoKg;
-    const fator = origem.uf === destino.uf ? 0.6 : 1.4;
-    const frete = aleatorio() < 0.125 ? 0 : Math.min(1500, 70 + pesoTotal * 1.6 * fator);
-
-    solicitacoes.push({
-      id: `demo-solicitacao-${String(solicitacoes.length + 1).padStart(3, "0")}`,
-      itemId: item.id,
-      solicitanteId: solicitante.id,
-      utDestinoCodigo: destino.codigo,
-      respondidaPorId: almoxarifePorUt.get(item.utCodigo)!.id,
-      concluidaPorId: solicitante.id,
-      quantidade,
-      observacao: aleatorio() < 0.6 ? sortear(OBSERVACOES) : null,
-      valorUnitarioSnapshot: item.valorUnitarioReposicao,
-      custoFrete: Math.round(frete * 2) / 2,
-      criadoEm,
-      respondidaEm,
-      concluidaEm,
-    });
-  }
-
-  // Status final: esgotado sem unidades; ~5% do que sobrou foi arquivado.
+  // Status final: ~6% esgotado (sem unidades); ~5% do que sobrou foi arquivado.
   for (const item of itens) {
-    if (item.quantidadeDisponivel === 0) item.status = "esgotado";
-    else if (aleatorio() < 0.05) item.status = "arquivado";
+    if (aleatorio() < 0.06) {
+      item.quantidadeDisponivel = 0;
+      item.status = "esgotado";
+    } else if (aleatorio() < 0.05) {
+      item.status = "arquivado";
+    }
   }
 
-  solicitacoes.sort((a, b) => a.concluidaEm.getTime() - b.concluidaEm.getTime());
-
-  return { uts, usuarios, itens, solicitacoes, quantidadeFotosGenericas: QUANTIDADE_FOTOS_GENERICAS };
+  return { uts, usuarios, itens, quantidadeFotosGenericas: QUANTIDADE_FOTOS_GENERICAS };
 }

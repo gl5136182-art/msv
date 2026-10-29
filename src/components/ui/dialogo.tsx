@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react"
 import { Dialog } from "radix-ui"
+import { cn } from "cn"
 
 import { Icone } from "@/components/icone"
 
@@ -13,11 +14,12 @@ type DialogoProps = {
   titulo: string
   descricao?: string
   children?: ReactNode
+  className?: string
   /** Botões de ação, alinhados à direita. */
   rodape?: ReactNode
 }
 
-export function Dialogo({ aberto, aoMudar, titulo, descricao, children, rodape }: DialogoProps) {
+export function Dialogo({ aberto, aoMudar, titulo, descricao, children, className, rodape }: DialogoProps) {
   return (
     <Dialog.Root open={aberto} onOpenChange={aoMudar}>
       <Dialog.Portal>
@@ -25,7 +27,10 @@ export function Dialogo({ aberto, aoMudar, titulo, descricao, children, rodape }
         <Dialog.Content
           // Sem descrição o Radix avisaria no console; `undefined` explícito diz que é de propósito.
           {...(descricao ? {} : { "aria-describedby": undefined })}
-          className="fixed top-4 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 flex-col rounded-md border border-border bg-card outline-none lg:top-1/2 lg:-translate-y-1/2"
+          className={cn(
+            "fixed top-4 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 flex-col rounded-md border border-border bg-card outline-none lg:top-1/2 lg:-translate-y-1/2",
+            className,
+          )}
         >
           <div className="flex items-start justify-between gap-4 border-b border-border px-4 py-3">
             <div className="min-w-0">

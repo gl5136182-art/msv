@@ -7,11 +7,11 @@ import {
   ajustarQuantidadeSchema,
   alterarArquivamentoSchema,
   editarItemSchema,
-  estimarFreteSchema,
+  cotarFreteSchema,
   filtrosVitrineSchema,
   itemSchema,
   prepararUploadFotosSchema,
-  type EstimativaFreteDto,
+  type CotacaoFreteDto,
   type ItemDetalheVitrineDto,
   type ItemDto,
   type ItemParaEdicaoDto,
@@ -68,11 +68,11 @@ export async function obterItemDaVitrine(id: string): Promise<Resultado<ItemDeta
   return executar(async () => service.obterItemDaVitrine(await exigirUsuarioLogado(), id));
 }
 
-export async function estimarFrete(entrada: unknown): Promise<Resultado<EstimativaFreteDto>> {
-  const dados = estimarFreteSchema.safeParse(entrada);
+export async function cotarFrete(entrada: unknown): Promise<Resultado<CotacaoFreteDto>> {
+  const dados = cotarFreteSchema.safeParse(entrada);
   if (!dados.success) return falhaDeValidacao(dados.error);
 
-  return executar(async () => service.estimarFreteDoItem(await exigirUsuarioLogado(), dados.data));
+  return executar(async () => service.cotarFreteDoItem(await exigirUsuarioLogado(), dados.data));
 }
 
 /** `entrada` são os parâmetros da URL; o schema ignora o que for inválido (não gera erro). */

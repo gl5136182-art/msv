@@ -1,7 +1,7 @@
 import type { StatusItem } from "./itens.schemas";
 
 // Regras puras de quantidade e status do item (SPEC §3, regras 2, 3 e 4). Sem acesso a banco:
-// o service e, na Fase 4, as solicitações (aceitar/cancelar) usam as mesmas funções.
+// o service usa estas funções.
 
 /**
  * Status do item depois que a quantidade disponível mudou (regra 3):

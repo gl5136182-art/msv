@@ -1,12 +1,6 @@
 import { db, type ClienteDb } from "@/infra/db";
-import type { Prisma } from "@/generated/prisma/client";
 
-import type {
-  ItemCadastradoBase,
-  ItemDisponivelBase,
-  TransferenciaBase,
-  UtBase,
-} from "./dashboard.regras";
+import type { ItemCadastradoBase, ItemDisponivelBase, UtBase } from "./dashboard.regras";
 import type { CategoriaItem } from "@/modules/itens/itens.schemas";
 
 // Leituras do dashboard (SPEC §6.5). Devolve registros simples (`Decimal` já convertido em
@@ -65,53 +59,6 @@ export async function listarItensCadastradosDesde(
     quantidadeTotal: item.quantidadeTotal,
     valorUnitarioReposicao: item.valorUnitarioReposicao.toNumber(),
   }));
-}
-
-/**
- * Solicitações `concluida` com `concluida_em` no intervalo. Com filtro de UT entram as
- * transferências em que a UT é origem (dona do item) ou destino (quem pediu).
- */
-export async function listarTransferenciasConcluidas(
-  inicio: Date,
-  fim: Date,
-  filtro: FiltroDados,
-  cliente: ClienteDb = db,
-): Promise<TransferenciaBase[]> {
-  const where: Prisma.SolicitacaoWhereInput = {
-    status: "concluida",
-    concluidaEm: { gte: inicio, lte: fim },
-    ...(filtro.categoria ? { item: { categoria: filtro.categoria } } : {}),
-    ...(filtro.utId ? { OR: [{ item: { utId: filtro.utId } }, { utDestinoId: filtro.utId }] } : {}),
-  };
-
-  const solicitacoes = await cliente.solicitacao.findMany({
-    where,
-    select: {
-      quantidade: true,
-      valorUnitarioSnapshot: true,
-      custoFrete: true,
-      concluidaEm: true,
-      utDestino: { select: selecionarUt },
-      item: { select: { criadoEm: true, valorUnitarioReposicao: true, ut: { select: selecionarUt } } },
-    },
-  });
-
-  return solicitacoes.flatMap((s) =>
-    s.concluidaEm
-      ? [
-          {
-            origem: s.item.ut,
-            destino: s.utDestino,
-            quantidade: s.quantidade,
-            // Concluída sempre passou pelo aceite (snapshot gravado); o fallback é só defensivo.
-            valorUnitarioSnapshot: (s.valorUnitarioSnapshot ?? s.item.valorUnitarioReposicao).toNumber(),
-            custoFrete: s.custoFrete.toNumber(),
-            concluidaEm: s.concluidaEm,
-            itemCriadoEm: s.item.criadoEm,
-          },
-        ]
-      : [],
-  );
 }
 
 /** UTs ativas para o filtro, mais a `utIdSelecionada` mesmo se estiver inativa (histórico). */

@@ -1,5 +1,5 @@
-// Remove as UTs `DEMO-` e tudo ligado a elas (Fase 6, SPEC §9): solicitações, notificações,
-// fotos (banco e storage), itens, usuários (com sessões e contas) e as próprias UTs.
+// Remove as UTs `DEMO-` e tudo ligado a elas (Fase 6, SPEC §9): notificações, fotos (banco e
+// storage), itens, usuários (com sessões e contas) e as próprias UTs.
 // Só apaga o que pertence a UTs `DEMO-`; os dados reais não são tocados.
 
 import "dotenv/config";
@@ -37,16 +37,6 @@ async function limparDemo(): Promise<void> {
 
   const apagados = await db.$transaction(
     async (tx) => {
-      // Inclui pedidos feitos por usuários reais a itens de demonstração.
-      const solicitacoes = await tx.solicitacao.deleteMany({
-        where: {
-          OR: [
-            { itemId: { in: itemIds } },
-            { utDestinoId: { in: utIds } },
-            { solicitanteId: { in: usuarioIds } },
-          ],
-        },
-      });
       const notificacoes = await tx.notificacao.deleteMany({ where: { usuarioId: { in: usuarioIds } } });
       await tx.itemFoto.deleteMany({ where: { itemId: { in: itemIds } } });
       const itensApagados = await tx.item.deleteMany({ where: { id: { in: itemIds } } });
@@ -55,7 +45,6 @@ async function limparDemo(): Promise<void> {
       const utsApagadas = await tx.ut.deleteMany({ where: { id: { in: utIds } } });
 
       return {
-        solicitacoes: solicitacoes.count,
         notificacoes: notificacoes.count,
         itens: itensApagados.count,
         usuarios: usuariosApagados.count,
@@ -70,7 +59,7 @@ async function limparDemo(): Promise<void> {
   }
 
   console.log(
-    `seed:demo:limpar: removidos ${apagados.uts} UTs, ${apagados.usuarios} usuários, ${apagados.itens} itens, ${apagados.solicitacoes} solicitações, ${apagados.notificacoes} notificações e ${chaves.length} arquivos do storage.`,
+    `seed:demo:limpar: removidos ${apagados.uts} UTs, ${apagados.usuarios} usuários, ${apagados.itens} itens, ${apagados.notificacoes} notificações e ${chaves.length} arquivos do storage.`,
   );
 }
 
