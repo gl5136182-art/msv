@@ -9,7 +9,6 @@ export type RecomendacaoFrete = {
   tipo: "cotacao" | "veiculo" | "compra";
   cotacaoId: number | null;
   origem: "ia" | "menor_custo";
-  justificativa: string;
 };
 
 export type DecisaoFreteIa = {
@@ -37,15 +36,14 @@ const respostaSchema = z.object({
   distanciaKm: z.coerce.number().nonnegative(),
   veiculoProprio: faixaSchema,
   recomendada: z.string(),
-  justificativa: z.string().max(500),
 });
 
 const SISTEMA = `Você recomenda a melhor forma de obter materiais e equipamentos para uma empresa brasileira.
 Recebe cotações reais de transportadoras, o custo de comprar o item novo e os dados da carga. Compare preço e prazo.
 As cotações têm referências "frete_ID". Você também pode escolher "veiculo" (buscar com veículo próprio) ou "compra".
-Estime a distância rodoviária e uma faixa de custo de ida e volta com veículo próprio, incluindo combustível, pedágios, desgaste ou aluguel, motorista e veículo adequado à carga. Mesma cidade: deslocamento urbano de 5 a 30 km.
+Estime a distância rodoviária e uma faixa de custo de ida e volta com veículo próprio, incluindo combustível, pedágios, motorista e veículo adequado à carga. Mesma cidade: deslocamento urbano de 5 a 30 km.
 Não altere valores ou prazos das cotações. Escolha somente uma referência recebida. Se não houver urgência informada, o menor custo total pesa mais; um prazo menor só justifica um custo maior quando houver benefício operacional claro.
-Responda só com JSON: {"distanciaKm":0,"veiculoProprio":{"min":0,"max":0},"recomendada":"frete_1","justificativa":"até 300 caracteres"}.`;
+Responda só com JSON: {"distanciaKm":0,"veiculoProprio":{"min":0,"max":0},"recomendada":"frete_1"}.`;
 
 function arredondar(valor: number): number {
   return Math.round(valor * 100) / 100;
@@ -87,7 +85,6 @@ export async function recomendarFrete(pedido: PedidoRecomendacaoFrete): Promise<
     recomendacao: {
       ...recomendacao,
       origem: "ia",
-      justificativa: lida.data.justificativa.trim().slice(0, 300),
     },
   };
 }
@@ -118,13 +115,11 @@ export function recomendarMenorCusto(
       tipo: "cotacao",
       cotacaoId: maisBarata.id,
       origem: "menor_custo",
-      justificativa: "Menor valor entre as opções disponíveis.",
     };
   }
   return {
     tipo: "compra",
     cotacaoId: null,
     origem: "menor_custo",
-    justificativa: "Comprar novo tem o menor valor entre as opções disponíveis.",
   };
 }

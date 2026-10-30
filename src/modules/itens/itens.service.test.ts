@@ -831,7 +831,6 @@ describe("cotarFreteDoItem", () => {
       distanciaKm: 480,
       veiculoProprio: { min: 900, max: 1000 },
       recomendada: "frete_1",
-      justificativa: "Menor custo de transferência.",
     });
   });
 

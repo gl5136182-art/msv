@@ -440,7 +440,6 @@ export type CotacaoFreteDto = {
     tipo: "cotacao" | "veiculo" | "compra";
     cotacaoId: number | null;
     origem: "ia" | "menor_custo";
-    justificativa: string;
   };
 };
 
