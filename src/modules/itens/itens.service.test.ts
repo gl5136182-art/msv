@@ -104,6 +104,8 @@ function registro(parcial: Partial<ItemRegistro> = {}): ItemRegistro {
     criadoPorId: "alm",
     categoria: "material",
     rm: "123456",
+    numeroSerie: null,
+    patrimonio: null,
     nome: "Furadeira de impacto",
     marca: "Bosch",
     modelo: "GSB 550",
