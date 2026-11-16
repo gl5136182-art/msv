@@ -32,7 +32,6 @@ describe("recomendarFrete", () => {
       distanciaKm: 480.4,
       veiculoProprio: { min: 900, max: 1000 },
       recomendada: "frete_2",
-      justificativa: " Mesmo preço e entrega mais rápida. ",
     });
 
     await expect(recomendarFrete(pedido)).resolves.toEqual({
@@ -42,9 +41,9 @@ describe("recomendarFrete", () => {
         tipo: "cotacao",
         cotacaoId: 2,
         origem: "ia",
-        justificativa: "Mesmo preço e entrega mais rápida.",
       },
     });
+    expect(llm.mock.calls[0][0].sistema).not.toContain("justificativa");
     const enviado = JSON.parse(llm.mock.calls[0][0].usuario);
     expect(enviado.cotacoes[1]).toMatchObject({ referencia: "frete_2", valor: 120, prazoDias: 3 });
   });
@@ -54,7 +53,6 @@ describe("recomendarFrete", () => {
       distanciaKm: 480,
       veiculoProprio: { min: 900, max: 1000 },
       recomendada: "frete_999",
-      justificativa: "Inventado.",
     });
     await expect(recomendarFrete(pedido)).resolves.toBeNull();
 

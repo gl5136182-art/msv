@@ -62,7 +62,6 @@ async function semearDemo(): Promise<void> {
           utId: idDaUt(i.utCodigo),
           criadoPorId: i.criadoPorId,
           categoria: i.categoria,
-          segmento: i.segmento,
           rm: i.rm,
           nome: i.nome,
           marca: i.marca,

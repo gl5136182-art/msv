@@ -28,18 +28,6 @@ export const ROTULO_CATEGORIA: Record<CategoriaItem, string> = {
   material: "Material",
 };
 
-export const SEGMENTOS = ["industrial", "facilities", "logistica", "mineracao", "energia", "oleo_gas"] as const;
-export type Segmento = (typeof SEGMENTOS)[number];
-
-export const ROTULO_SEGMENTO: Record<Segmento, string> = {
-  industrial: "Industrial",
-  facilities: "Facilities",
-  logistica: "Logística",
-  mineracao: "Mineração",
-  energia: "Energia",
-  oleo_gas: "Óleo & Gás",
-};
-
 export const UNIDADES = ["un", "cx", "kg", "m", "l", "par", "jogo"] as const;
 export type Unidade = (typeof UNIDADES)[number];
 
@@ -53,7 +41,7 @@ export const ROTULO_UNIDADE: Record<Unidade, string> = {
   jogo: "Jogo",
 };
 
-export const STATUS_ITEM = ["disponivel", "esgotado", "arquivado"] as const;
+export const STATUS_ITEM = ["disponivel", "esgotado", "arquivado", "transferido"] as const;
 export type StatusItem = (typeof STATUS_ITEM)[number];
 
 export const ORIGENS_DIMENSOES = ["manual", "ia", "ia_ajustada"] as const;
@@ -138,20 +126,38 @@ export type FotoEnviada = z.infer<typeof fotoEnviadaSchema>;
 /** RM (Registro Manserv): só dígitos, até 20 (SPEC §5). Guardado como texto para manter zeros à esquerda. */
 export const TAMANHO_MAXIMO_RM = 20;
 
-const rm = z
-  .string("Informe o RM.")
-  .trim()
-  .min(1, "Informe o RM.")
-  .regex(/^\d+$/, "O RM deve ter apenas números.")
-  .max(TAMANHO_MAXIMO_RM, `O RM deve ter no máximo ${TAMANHO_MAXIMO_RM} números.`);
+const vazioParaUndefined = (v: unknown) => (typeof v === "string" && v.trim() === "" ? undefined : v);
+
+/** Opcional por si só: a regra "ao menos um dos três" fica em `refinarItem`. */
+const rm = z.preprocess(
+  vazioParaUndefined,
+  z
+    .string()
+    .trim()
+    .regex(/^\d+$/, "O RM deve ter apenas números.")
+    .max(TAMANHO_MAXIMO_RM, `O RM deve ter no máximo ${TAMANHO_MAXIMO_RM} números.`)
+    .optional(),
+);
+
+export const TAMANHO_MAXIMO_IDENTIFICADOR = 60;
+const identificador = (nome: string) =>
+  z.preprocess(
+    vazioParaUndefined,
+    z
+      .string()
+      .trim()
+      .max(TAMANHO_MAXIMO_IDENTIFICADOR, `${nome} deve ter no máximo ${TAMANHO_MAXIMO_IDENTIFICADOR} caracteres.`)
+      .optional(),
+  );
 
 const itemBaseSchema = z.object({
   nome: texto("Informe o nome do item.", 150, "O nome"),
   categoria: z.enum(CATEGORIAS_ITEM, "Selecione a categoria."),
   /** R$ por mês. Obrigatório para "Ativo"; descartado para "Material" (ver `refinarItem`). */
   valorDepreciacaoMensal: opcional(moeda("Informe o valor de depreciação.")),
-  segmento: z.enum(SEGMENTOS, "Selecione o segmento."),
   rm,
+  numeroSerie: identificador("O S/N"),
+  patrimonio: identificador("O número do patrimônio"),
   marca: texto("Informe a marca.", 100, "A marca"),
   modelo: texto("Informe o modelo.", 100, "O modelo"),
   descricao: z
@@ -182,6 +188,9 @@ const itemBaseSchema = z.object({
 
 type CamposRefinados = {
   categoria: CategoriaItem;
+  rm?: string;
+  numeroSerie?: string;
+  patrimonio?: string;
   valorDepreciacaoMensal?: number;
   larguraLoteCm?: number;
   alturaLoteCm?: number;
@@ -198,6 +207,17 @@ const MENSAGEM_LOTE_INCOMPLETO = "Preencha os 4 campos do lote ou deixe todos em
  *  - o lote é tudo ou nada: os 4 campos preenchidos ou os 4 em branco.
  */
 function refinarItem(dados: CamposRefinados, ctx: z.RefinementCtx): void {
+  // Identificação: RM, S/N e patrimônio — basta um; se nenhum vier, os três ficam obrigatórios.
+  if (!dados.rm && !dados.numeroSerie && !dados.patrimonio) {
+    for (const [campo, mensagem] of [
+      ["rm", "Informe o RM, o S/N ou o número do patrimônio."],
+      ["numeroSerie", "Informe o S/N, o RM ou o número do patrimônio."],
+      ["patrimonio", "Informe o número do patrimônio, o RM ou o S/N."],
+    ] as const) {
+      ctx.addIssue({ code: "custom", path: [campo], message: mensagem });
+    }
+  }
+
   if (dados.categoria === "ativo" && dados.valorDepreciacaoMensal === undefined) {
     ctx.addIssue({
       code: "custom",
@@ -259,6 +279,23 @@ export type AjustarQuantidadeEntrada = z.output<typeof ajustarQuantidadeSchema>;
 export const alterarArquivamentoSchema = z.object({ id: z.string().min(1), arquivar: z.boolean() });
 export type AlterarArquivamentoEntrada = z.infer<typeof alterarArquivamentoSchema>;
 
+/** Transferência de unidades para fora da UT: destino obrigatório e quantidade inteira ≥ 1. */
+export const transferirItemSchema = z.object({
+  id: z.string().min(1),
+  /** UT para onde as unidades foram. */
+  destinoUtId: z.string().min(1, "Selecione para onde o item foi."),
+  quantidade: textoOuNumero
+    .transform((v) => (typeof v === "number" ? v : v.trim() === "" ? Number.NaN : Number(v.replace(/\./g, ""))))
+    .pipe(
+      z
+        .number("Informe a quantidade.")
+        .int("A quantidade deve ser um número inteiro.")
+        .min(1, "A quantidade deve ser pelo menos 1.")
+        .max(QUANTIDADE_MAXIMA, "A quantidade é alta demais. Confira."),
+    ),
+});
+export type TransferirItemEntrada = z.output<typeof transferirItemSchema>;
+
 export const prepararUploadFotosSchema = z.object({
   quantidade: z
     .number()
@@ -289,9 +326,10 @@ export type ItemDto = {
   descricao: string | null;
   categoria: CategoriaItem;
   /** Nulo só nos itens criados antes do campo existir. */
-  segmento: Segmento | null;
   /** Nulo só nos itens criados antes do campo existir. */
   rm: string | null;
+  numeroSerie: string | null;
+  patrimonio: string | null;
   estado: Estado;
   unidade: Unidade;
   quantidadeTotal: number;
@@ -343,7 +381,6 @@ const LIMITE_PAGINA_VITRINE = 1000;
 export const filtrosVitrineSchema = z.object({
   busca: z.string().trim().max(LIMITE_BUSCA_VITRINE).optional().catch(undefined),
   categoria: z.enum(CATEGORIAS_ITEM).optional().catch(undefined),
-  segmento: z.enum(SEGMENTOS).optional().catch(undefined),
   uf: z
     .string()
     .transform((v) => v.trim().toUpperCase())
@@ -365,7 +402,6 @@ export type ItemVitrineDto = {
   modelo: string;
   rm: string | null;
   categoria: CategoriaItem;
-  segmento: Segmento | null;
   estado: Estado;
   unidade: Unidade;
   quantidadeDisponivel: number;
@@ -384,8 +420,9 @@ export type ItemDetalheVitrineDto = {
   modelo: string;
   descricao: string | null;
   rm: string | null;
+  numeroSerie: string | null;
+  patrimonio: string | null;
   categoria: CategoriaItem;
-  segmento: Segmento | null;
   estado: Estado;
   unidade: Unidade;
   quantidadeDisponivel: number;
@@ -440,7 +477,6 @@ export type CotacaoFreteDto = {
     tipo: "cotacao" | "veiculo" | "compra";
     cotacaoId: number | null;
     origem: "ia" | "menor_custo";
-    justificativa: string;
   };
 };
 

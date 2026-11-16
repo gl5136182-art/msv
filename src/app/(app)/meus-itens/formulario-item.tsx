@@ -10,17 +10,20 @@ import { Button } from "@/components/ui/button";
 import { Campo } from "@/components/ui/campo";
 import { Input } from "@/components/ui/input";
 import { Seletor } from "@/components/ui/seletor";
-import { decimalParaCampo, mascararMoeda, moedaParaCampo } from "@/lib/numeros-ptbr";
+import {
+  decimalParaCampo,
+  mascararMoeda,
+  mascararRm,
+  moedaParaCampo,
+  rmSomenteDigitos,
+} from "@/lib/numeros-ptbr";
 import { criarItem, editarItem } from "@/modules/itens/itens.actions";
 import {
   CATEGORIAS_ITEM,
   ESTADOS,
   ROTULO_CATEGORIA,
   ROTULO_ESTADO,
-  ROTULO_SEGMENTO,
   ROTULO_UNIDADE,
-  SEGMENTOS,
-  TAMANHO_MAXIMO_RM,
   UNIDADES,
   itemSchema,
   type ItemEntrada,
@@ -106,11 +109,11 @@ function CorpoFormularioItem({ item, aoSalvar }: FormularioItemProps & { aoSalva
       ? {
           nome: item.nome,
           rm: item.rm ?? "",
+          numeroSerie: item.numeroSerie ?? "",
+          patrimonio: item.patrimonio ?? "",
           categoria: item.categoria,
           valorDepreciacaoMensal:
             item.valorDepreciacaoMensal === null ? "" : moedaParaCampo(item.valorDepreciacaoMensal),
-          // Itens antigos podem não ter segmento: o campo abre vazio e é obrigatório ao salvar.
-          segmento: item.segmento ?? undefined,
           marca: item.marca,
           modelo: item.modelo,
           descricao: item.descricao ?? "",
@@ -131,9 +134,10 @@ function CorpoFormularioItem({ item, aoSalvar }: FormularioItemProps & { aoSalva
       : {
           nome: "",
           rm: "",
+          numeroSerie: "",
+          patrimonio: "",
           categoria: undefined,
           valorDepreciacaoMensal: "",
-          segmento: undefined,
           marca: "",
           modelo: "",
           descricao: "",
@@ -223,20 +227,54 @@ function CorpoFormularioItem({ item, aoSalvar }: FormularioItemProps & { aoSalva
           />
         </Campo>
 
-        <Campo
-          htmlFor="item-rm"
-          rotulo="RM (Registro Manserv)"
-          obrigatorio
-          ajuda="Só números. Cada item tem um RM único."
-          erro={errors.rm?.message}
-        >
+        <Controller
+          control={control}
+          name="rm"
+          render={({ field, fieldState }) => (
+            <Campo
+              htmlFor="item-rm"
+              rotulo="RM (Registro Manserv)"
+              ajuda="Só números, no formato 00.000.0000. Cada item tem um RM único."
+              erro={fieldState.error?.message}
+            >
+              <Input
+                id="item-rm"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="00.000.0000"
+                maxLength={12}
+                aria-invalid={fieldState.error ? true : undefined}
+                name={field.name}
+                ref={field.ref}
+                onBlur={field.onBlur}
+                value={mascararRm(String(field.value ?? ""))}
+                onChange={(e) => field.onChange(rmSomenteDigitos(e.target.value))}
+              />
+            </Campo>
+          )}
+        />
+
+        <p className="text-sm text-muted-foreground">
+          Preencha ao menos um: RM, S/N ou número do patrimônio. Os demais ficam opcionais.
+        </p>
+
+        <Campo htmlFor="item-serie" rotulo="S/N (número de série)" erro={errors.numeroSerie?.message}>
           <Input
-            id="item-rm"
-            inputMode="numeric"
+            id="item-serie"
             autoComplete="off"
-            maxLength={TAMANHO_MAXIMO_RM}
-            aria-invalid={errors.rm ? true : undefined}
-            {...register("rm")}
+            maxLength={60}
+            aria-invalid={errors.numeroSerie ? true : undefined}
+            {...register("numeroSerie")}
+          />
+        </Campo>
+
+        <Campo htmlFor="item-patrimonio" rotulo="Número do patrimônio" erro={errors.patrimonio?.message}>
+          <Input
+            id="item-patrimonio"
+            autoComplete="off"
+            maxLength={60}
+            aria-invalid={errors.patrimonio ? true : undefined}
+            {...register("patrimonio")}
           />
         </Campo>
 
@@ -288,17 +326,6 @@ function CorpoFormularioItem({ item, aoSalvar }: FormularioItemProps & { aoSalva
             )}
           />
         ) : null}
-
-        <Campo htmlFor="item-segmento" rotulo="Segmento" obrigatorio erro={errors.segmento?.message}>
-          <Seletor id="item-segmento" aria-invalid={errors.segmento ? true : undefined} {...register("segmento")}>
-            <option value="">Selecione</option>
-            {SEGMENTOS.map((segmento) => (
-              <option key={segmento} value={segmento}>
-                {ROTULO_SEGMENTO[segmento]}
-              </option>
-            ))}
-          </Seletor>
-        </Campo>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Campo htmlFor="item-marca" rotulo="Marca" obrigatorio erro={errors.marca?.message}>

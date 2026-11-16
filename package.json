@@ -16,6 +16,8 @@
     "seed:demo:limpar": "tsx prisma/seed/demo-limpar.ts",
     "importar:inventario": "tsx prisma/seed/importar-inventario.ts",
     "importar:inventario:limpar": "tsx prisma/seed/importar-inventario-limpar.ts",
+    "fotos:reais": "tsx prisma/seed/trocar-fotos-reais.ts",
+    "fotos:aplicar": "tsx prisma/seed/aplicar-foto.ts",
     "icones:pwa": "node scripts/gerar-icones-pwa.mjs",
     "sw": "node scripts/gerar-sw.mjs"
   },

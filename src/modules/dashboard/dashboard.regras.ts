@@ -3,11 +3,8 @@ import { rotuloUt } from "@/lib/rotulo-ut";
 import type { BarraDto, Periodo } from "./dashboard.schemas";
 
 // Fórmulas do dashboard (SPEC §6.5). Funções puras, sem banco nem framework: o service monta os
-// registros e estas funções calculam. O simulador também roda no cliente (slider).
+// registros e estas funções calculam.
 // Dinheiro é somado em centavos inteiros para não acumular erro de ponto flutuante.
-
-/** Frete médio inicial do simulador (SPEC §6.5). */
-export const FRETE_MEDIO_PADRAO = 150;
 
 /** Quantas UTs entram nos gráficos "top 10". */
 export const TOP_UTS = 10;
@@ -21,13 +18,13 @@ export type ItemDisponivelBase = {
   valorUnitarioReposicao: number;
 };
 
-export type ItemCadastradoBase = {
-  criadoEm: Date;
-  quantidadeTotal: number;
+export type TransferenciaBase = {
+  itemId: string;
+  quantidade: number;
   valorUnitarioReposicao: number;
 };
 
-const centavos = (valor: number): number => Math.round(valor * 100);
+const centavos =(valor: number): number => Math.round(valor * 100);
 const reais = (cent: number): number => cent / 100;
 
 // ---------------------------------------------------------------------------------------
@@ -71,13 +68,17 @@ export function resumirEstoque(itens: ItemDisponivelBase[]) {
   return { itens: itens.length, unidades, valorParado: reais(valorCent) };
 }
 
-export function somarUnidadesCadastradas(itens: ItemCadastradoBase[]): number {
-  return itens.reduce((soma, item) => soma + item.quantidadeTotal, 0);
-}
-
-/** Valor cadastrado: Σ quantidade total × valor de reposição (base da projeção anual). */
-export function somarValorCadastrado(itens: ItemCadastradoBase[]): number {
-  return reais(itens.reduce((soma, item) => soma + item.quantidadeTotal * centavos(item.valorUnitarioReposicao), 0));
+/** Valor (quantidade × reposição) e unidades das transferências; `itens` = itens distintos. */
+export function resumirTransferencias(transferencias: TransferenciaBase[]) {
+  let unidades = 0;
+  let valorCent = 0;
+  const itens = new Set<string>();
+  for (const t of transferencias) {
+    unidades += t.quantidade;
+    valorCent += t.quantidade * centavos(t.valorUnitarioReposicao);
+    itens.add(t.itemId);
+  }
+  return { itens: itens.size, unidades, valor: reais(valorCent) };
 }
 
 // ---------------------------------------------------------------------------------------
@@ -112,40 +113,4 @@ export function valorParadoPorCategoria(itens: ItemDisponivelBase[]): BarraDto[]
   return ordenarPorValor(
     [...porCategoria].map(([id, cent]) => ({ id, rotulo: ROTULO_CATEGORIA_BARRA[id], valor: reais(cent) })),
   );
-}
-
-// ---------------------------------------------------------------------------------------
-// Simulador (SPEC §6.5): projeção, não valor realizado
-// ---------------------------------------------------------------------------------------
-
-export type EntradaSimulacao = {
-  valorParado: number;
-  itensDisponiveis: number;
-  valorCadastrado90d: number;
-  itensCadastrados90d: number;
-  /** 0 a 100. */
-  percentual: number;
-  /** R$ por transferência. */
-  freteMedio: number;
-};
-
-/** Janela em dias da base do "valor cadastrado" do simulador. */
-export const DIAS_BASE_SIMULADOR = 90;
-
-/**
- * - Imediata = valor parado × % − (itens disponíveis × % × frete médio).
- * - Anual = (valor cadastrado nos últimos 90 dias × 4) × % − frete proporcional, ou seja,
- *   (itens cadastrados nos últimos 90 dias × 4) × % × frete médio.
- * "× 4" é a anualização do SPEC (90 dias ≈ 1/4 do ano).
- */
-export function simular(entrada: EntradaSimulacao): { imediata: number; anual: number } {
-  const fracao = Math.min(Math.max(entrada.percentual, 0), 100) / 100;
-  const frete = Math.max(entrada.freteMedio, 0);
-  const anualizar = 4;
-
-  const imediata = entrada.valorParado * fracao - entrada.itensDisponiveis * fracao * frete;
-  const anual =
-    entrada.valorCadastrado90d * anualizar * fracao - entrada.itensCadastrados90d * anualizar * fracao * frete;
-
-  return { imediata: Math.round(imediata * 100) / 100, anual: Math.round(anual * 100) / 100 };
 }

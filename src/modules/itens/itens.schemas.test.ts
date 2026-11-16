@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ajustarQuantidadeSchema, editarItemSchema, itemSchema } from "./itens.schemas";
+import { ajustarQuantidadeSchema, editarItemSchema, itemSchema, transferirItemSchema } from "./itens.schemas";
 
 const FOTO = {
   chave: "fotos/2026/10/123e4567-e89b-12d3-a456-426614174000.jpg",
@@ -12,7 +12,6 @@ const valida = {
   rm: "123456",
   categoria: "material",
   valorDepreciacaoMensal: "",
-  segmento: "industrial",
   marca: "Bosch",
   modelo: "GSB 550",
   descricao: "",
@@ -66,8 +65,6 @@ describe("itemSchema", () => {
     ["nome", { nome: "   " }],
     ["categoria", { categoria: "" }],
     ["categoria antiga", { categoria: "ferramentas" }],
-    ["segmento", { segmento: "" }],
-    ["segmento inexistente", { segmento: "varejo" }],
     ["marca", { marca: "" }],
     ["modelo", { modelo: "" }],
     ["condição", { estado: "" }],
@@ -135,6 +132,66 @@ describe("itemSchema: RM", () => {
 
   it("aceita 20 dígitos", () => {
     expect(itemSchema.safeParse({ ...valida, rm: "9".repeat(20) }).success).toBe(true);
+  });
+});
+
+describe("itemSchema: identificação (RM, S/N e patrimônio)", () => {
+  const semRm = { ...valida, rm: "" };
+
+  it("basta um dos três: só RM, só S/N ou só patrimônio", () => {
+    expect(itemSchema.safeParse(valida).success).toBe(true);
+    expect(itemSchema.safeParse({ ...semRm, numeroSerie: "SN0042" }).success).toBe(true);
+    expect(itemSchema.safeParse({ ...semRm, patrimonio: "P9981" }).success).toBe(true);
+  });
+
+  it("sem nenhum dos três, cada campo recebe uma mensagem apontando as alternativas", () => {
+    const r = itemSchema.safeParse({ ...semRm, numeroSerie: "  ", patrimonio: "" });
+
+    expect(r.success).toBe(false);
+    expect(r.error?.issues.map((i) => [i.path[0], i.message])).toEqual([
+      ["rm", "Informe o RM, o S/N ou o número do patrimônio."],
+      ["numeroSerie", "Informe o S/N, o RM ou o número do patrimônio."],
+      ["patrimonio", "Informe o número do patrimônio, o RM ou o S/N."],
+    ]);
+  });
+
+  it("aceita os campos ausentes (chamada direta da action) quando há outro identificador", () => {
+    const { rm, ...resto } = valida;
+    void rm;
+    expect(itemSchema.safeParse(resto).success).toBe(false);
+    expect(itemSchema.safeParse({ ...resto, patrimonio: "P9981" }).success).toBe(true);
+  });
+
+  it("apara os espaços e aceita letras, números e pontuação", () => {
+    const r = itemSchema.parse({ ...valida, numeroSerie: "  SN-00.42/A ", patrimonio: " PAT 9981 " });
+    expect(r.numeroSerie).toBe("SN-00.42/A");
+    expect(r.patrimonio).toBe("PAT 9981");
+  });
+
+  it("campo em branco vira ausente, não texto vazio", () => {
+    const r = itemSchema.parse({ ...valida, numeroSerie: "   ", patrimonio: "" });
+    expect(r.numeroSerie).toBeUndefined();
+    expect(r.patrimonio).toBeUndefined();
+  });
+
+  it("aceita até 60 caracteres e recusa 61, com a mensagem do campo", () => {
+    expect(itemSchema.safeParse({ ...valida, numeroSerie: "S".repeat(60), patrimonio: "P".repeat(60) }).success).toBe(true);
+
+    const serie = itemSchema.safeParse({ ...valida, numeroSerie: "S".repeat(61) });
+    expect(serie.error?.issues[0]).toMatchObject({ path: ["numeroSerie"], message: "O S/N deve ter no máximo 60 caracteres." });
+
+    const patrimonio = itemSchema.safeParse({ ...valida, patrimonio: "P".repeat(61) });
+    expect(patrimonio.error?.issues[0]).toMatchObject({
+      path: ["patrimonio"],
+      message: "O número do patrimônio deve ter no máximo 60 caracteres.",
+    });
+  });
+
+  it("a edição segue a mesma regra", () => {
+    const { quantidade, ...base } = valida;
+    void quantidade;
+    expect(editarItemSchema.safeParse({ ...base, id: "item1", rm: "", numeroSerie: "SN0042" }).success).toBe(true);
+    expect(editarItemSchema.safeParse({ ...base, id: "item1", rm: "" }).success).toBe(false);
   });
 });
 
@@ -228,5 +285,57 @@ describe("ajustarQuantidadeSchema", () => {
 
   it.each([["-1"], ["1,5"], [""], ["abc"], [-3]])("recusa %s", (valor) => {
     expect(ajustarQuantidadeSchema.safeParse({ id: "i", quantidadeDisponivel: valor }).success).toBe(false);
+  });
+});
+
+describe("transferirItemSchema", () => {
+  const pedido = { id: "item1", destinoUtId: "ut2", quantidade: "3" };
+
+  it("aceita a quantidade em texto ou número e mantém id e destino", () => {
+    expect(transferirItemSchema.parse(pedido)).toEqual({ id: "item1", destinoUtId: "ut2", quantidade: 3 });
+    expect(transferirItemSchema.parse({ ...pedido, quantidade: 12 }).quantidade).toBe(12);
+    expect(transferirItemSchema.parse({ ...pedido, quantidade: " 5 " }).quantidade).toBe(5);
+  });
+
+  it("entende o ponto de milhar digitado no formulário", () => {
+    expect(transferirItemSchema.parse({ ...pedido, quantidade: "1.000" }).quantidade).toBe(1000);
+  });
+
+  it("aceita de 1 até o limite de 1.000.000 e recusa o que passa", () => {
+    expect(transferirItemSchema.safeParse({ ...pedido, quantidade: "1" }).success).toBe(true);
+    expect(transferirItemSchema.safeParse({ ...pedido, quantidade: 1_000_000 }).success).toBe(true);
+
+    const r = transferirItemSchema.safeParse({ ...pedido, quantidade: 1_000_001 });
+    expect(r.error?.issues[0]).toMatchObject({ path: ["quantidade"], message: "A quantidade é alta demais. Confira." });
+  });
+
+  it("zero e negativo recusam com a mensagem do mínimo (diferente do ajuste, que aceita zero)", () => {
+    for (const quantidade of ["0", 0, "-2", -2]) {
+      const r = transferirItemSchema.safeParse({ ...pedido, quantidade });
+      expect(r.success).toBe(false);
+      expect(r.error?.issues[0].message).toBe("A quantidade deve ser pelo menos 1.");
+    }
+  });
+
+  it("recusa quantidade fracionada ou vazia, com mensagem de cada caso", () => {
+    expect(transferirItemSchema.safeParse({ ...pedido, quantidade: 1.5 }).error?.issues[0].message).toBe(
+      "A quantidade deve ser um número inteiro.",
+    );
+    for (const quantidade of ["", "   ", "abc", "1,5"]) {
+      const r = transferirItemSchema.safeParse({ ...pedido, quantidade });
+      expect(r.success).toBe(false);
+      expect(r.error?.issues[0].message).toBe("Informe a quantidade.");
+    }
+  });
+
+  it("o destino é obrigatório, com a mensagem do seletor", () => {
+    const r = transferirItemSchema.safeParse({ ...pedido, destinoUtId: "" });
+    expect(r.error?.issues[0]).toMatchObject({ path: ["destinoUtId"], message: "Selecione para onde o item foi." });
+    expect(transferirItemSchema.safeParse({ id: "item1", quantidade: "1" }).success).toBe(false);
+  });
+
+  it("recusa id vazio ou ausente", () => {
+    expect(transferirItemSchema.safeParse({ ...pedido, id: "" }).success).toBe(false);
+    expect(transferirItemSchema.safeParse({ destinoUtId: "ut2", quantidade: "1" }).success).toBe(false);
   });
 });

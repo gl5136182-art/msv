@@ -19,10 +19,11 @@ import {
 
 export const metadata: Metadata = { title: "Meus itens" };
 
-const SELO_STATUS: Record<StatusItem, { rotulo: string; variante: "ok" | "neutro" }> = {
+const SELO_STATUS: Record<StatusItem, { rotulo: string; variante: "ok" | "neutro" | "info" }> = {
   disponivel: { rotulo: "Disponível", variante: "ok" },
   esgotado: { rotulo: "Esgotado", variante: "neutro" },
   arquivado: { rotulo: "Arquivado", variante: "neutro" },
+  transferido: { rotulo: "Transferido", variante: "info" },
 };
 
 function BotaoCadastrar() {

@@ -5,9 +5,11 @@ import { CabecalhoPagina } from "@/components/layout/cabecalho-pagina";
 import { obterUsuarioLogado } from "@/infra/sessao";
 import { temPapel } from "@/lib/usuario-logado";
 import { obterItemDaUt } from "@/modules/itens/itens.actions";
+import { listarUtsAtivas } from "@/modules/uts/uts.actions";
 
 import { AjusteQuantidade } from "../../ajuste-quantidade";
 import { ArquivamentoItem } from "../../arquivamento-item";
+import { TransferenciaItem } from "../../transferencia-item";
 import { FormularioItem } from "../../formulario-item";
 
 export const metadata: Metadata = { title: "Editar item" };
@@ -19,7 +21,7 @@ export default async function PaginaEditarItem({ params }: PageProps<"/meus-iten
   const usuario = await obterUsuarioLogado();
   if (!usuario || !temPapel(usuario.papel, "almoxarife")) notFound();
 
-  const item = await obterItemDaUt(id);
+  const [item, uts] = await Promise.all([obterItemDaUt(id), listarUtsAtivas()]);
   // Item inexistente ou de outra UT: não revela a diferença.
   if (!item.ok) notFound();
 
@@ -31,6 +33,13 @@ export default async function PaginaEditarItem({ params }: PageProps<"/meus-iten
           itemId={item.dados.id}
           quantidadeDisponivel={item.dados.quantidadeDisponivel}
           quantidadeTotal={item.dados.quantidadeTotal}
+          unidade={item.dados.unidade}
+          status={item.dados.status}
+        />
+        <TransferenciaItem
+          itemId={item.dados.id}
+          utsDestino={uts.ok ? uts.dados.filter((ut) => ut.id !== item.dados.utId).map((ut) => ({ id: ut.id, rotulo: ut.rotulo })) : []}
+          quantidadeDisponivel={item.dados.quantidadeDisponivel}
           unidade={item.dados.unidade}
           status={item.dados.status}
         />

@@ -3,6 +3,19 @@
 
 const NBSP = " ";
 
+/** Máscara do RM enquanto o usuário digita: `"123456789"` → `"12.345.6789"` (até 9 dígitos). */
+export function mascararRm(texto: string): string {
+  const d = texto.replace(/\D/g, "").slice(0, 9);
+  if (d.length <= 2) return d;
+  if (d.length <= 5) return `${d.slice(0, 2)}.${d.slice(2)}`;
+  return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5)}`;
+}
+
+/** Só os dígitos do RM (valor guardado e enviado ao servidor). */
+export function rmSomenteDigitos(texto: string): string {
+  return texto.replace(/\D/g, "").slice(0, 9);
+}
+
 /**
  * Máscara de R$ enquanto o usuário digita: só os dígitos contam e os dois últimos são os centavos.
  * `"12345"` → `"R$ 123,45"`. Sem dígitos devolve `""`.

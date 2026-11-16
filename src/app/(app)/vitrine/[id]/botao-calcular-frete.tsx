@@ -255,7 +255,6 @@ function ResultadoFrete({ resultado, rotuloUnidade }: { resultado: CotacaoFreteD
         </table>
       </div>
 
-      <p className="text-sm">{recomendacao.justificativa}</p>
       <p className="text-xs text-muted-foreground">
         Fretes cotados na SuperFrete, sujeitos à disponibilidade e à conferência da transportadora. Veículo próprio e
         distância são estimativas da IA. Nenhum envio foi contratado.

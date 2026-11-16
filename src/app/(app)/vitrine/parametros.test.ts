@@ -12,7 +12,6 @@ describe("filtrosDosParametros", () => {
       filtrosDosParametros({
         q: "furadeira",
         categoria: "ativo",
-        segmento: "oleo_gas",
         uf: "sp",
         ut: "ut9",
         condicao: "usado_bom",
@@ -22,7 +21,6 @@ describe("filtrosDosParametros", () => {
     ).toEqual({
       busca: "furadeira",
       categoria: "ativo",
-      segmento: "oleo_gas",
       uf: "SP",
       utId: "ut9",
       estado: "usado_bom",
@@ -35,7 +33,6 @@ describe("filtrosDosParametros", () => {
     const f = filtrosDosParametros({
       q: "",
       categoria: "",
-      segmento: "",
       uf: "",
       ut: "",
       condicao: "",
@@ -43,7 +40,6 @@ describe("filtrosDosParametros", () => {
       pagina: "",
     });
     expect(f.categoria).toBeUndefined();
-    expect(f.segmento).toBeUndefined();
     expect(f.uf).toBeUndefined();
     expect(f.utId).toBeUndefined();
     expect(f.estado).toBeUndefined();

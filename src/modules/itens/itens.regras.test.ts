@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { calcularAjusteDeQuantidade, statusAposArquivamento, statusAposMudarQuantidade } from "./itens.regras";
+import { calcularAjusteDeQuantidade, calcularTransferencia, statusAposArquivamento, statusAposMudarQuantidade } from "./itens.regras";
 
 describe("statusAposMudarQuantidade (regra 3)", () => {
   it("chegar a 0 esgota o item", () => {
@@ -77,5 +77,22 @@ describe("statusAposArquivamento (regra 4)", () => {
 
   it("reativar item sem unidades deixa esgotado", () => {
     expect(statusAposArquivamento(false, 0)).toBe("esgotado");
+  });
+});
+
+describe("calcularTransferencia", () => {
+  const item = { quantidadeTotal: 10, quantidadeDisponivel: 6, status: "disponivel" as const };
+
+  it("transferência parcial desconta do estoque e mantém o item disponível", () => {
+    expect(calcularTransferencia(item, 2)).toEqual({ quantidadeDisponivel: 4, quantidadeTotal: 8, status: "disponivel" });
+  });
+
+  it("transferir tudo que está disponível marca como transferido", () => {
+    expect(calcularTransferencia(item, 6)).toEqual({ quantidadeDisponivel: 0, quantidadeTotal: 4, status: "transferido" });
+  });
+
+  it("recusa quantidade acima do disponível ou inválida", () => {
+    expect(() => calcularTransferencia(item, 7)).toThrow(RangeError);
+    expect(() => calcularTransferencia(item, 0)).toThrow(RangeError);
   });
 });

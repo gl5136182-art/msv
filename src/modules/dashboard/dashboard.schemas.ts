@@ -37,18 +37,13 @@ export type KpisDto = {
   itensNaVitrine: { itens: number; unidades: number };
   /** Σ quantidade disponível × valor de reposição. */
   valorParado: number;
+  /** Σ quantidade transferida × valor de reposição, das transferências registradas no período. */
+  valorTransferido: number;
+  /** Unidades transferidas no período e quantos itens distintos foram afetados. */
+  itensTransferidos: { unidades: number; itens: number };
 };
 
 export type BarraDto = { id: string; rotulo: string; valor: number };
-
-/** Base do simulador (SPEC §6.5); a conta é refeita no cliente a cada movimento do slider. */
-export type SimuladorBaseDto = {
-  valorParado: number;
-  itensDisponiveis: number;
-  valorCadastrado90d: number;
-  itensCadastrados90d: number;
-  freteMedioPadrao: number;
-};
 
 export type DashboardDto = {
   filtros: { periodo: Periodo; utId: string | null; categoria: CategoriaItem | null };
@@ -60,6 +55,5 @@ export type DashboardDto = {
     valorParadoPorUt: BarraDto[];
     valorParadoPorCategoria: BarraDto[];
   };
-  simulador: SimuladorBaseDto;
   geradoEm: string;
 };

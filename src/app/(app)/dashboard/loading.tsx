@@ -1,4 +1,4 @@
-// Esqueleto do dashboard (DESIGN §6: skeletons cinza, sem spinners): cabeçalho, resumo, gráficos e simulador.
+// Esqueleto do dashboard (DESIGN §6: skeletons cinza, sem spinners): cabeçalho, resumo, gráficos e rodapé.
 export default function Carregando() {
   return (
     <div aria-hidden className="-mx-4 -mt-4 bg-cinza lg:mx-0 lg:mt-0 lg:overflow-hidden lg:rounded-md">
@@ -12,7 +12,6 @@ export default function Carregando() {
           <div className="h-60 rounded-md bg-card" />
           <div className="h-60 rounded-md bg-card" />
         </div>
-        <div className="h-48 rounded-md bg-card" />
       </div>
     </div>
   );

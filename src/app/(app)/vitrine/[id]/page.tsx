@@ -12,7 +12,6 @@ import { obterItemDaVitrine } from "@/modules/itens/itens.actions";
 import {
   ROTULO_CATEGORIA,
   ROTULO_ESTADO,
-  ROTULO_SEGMENTO,
   type OrigemDimensoes,
 } from "@/modules/itens/itens.schemas";
 
@@ -74,7 +73,6 @@ export default async function PaginaItemDaVitrine({ params }: PageProps<"/vitrin
             <div className="flex flex-wrap items-center gap-1">
               <Selo variante="contorno">{ROTULO_ESTADO[item.estado]}</Selo>
               <Selo variante="contorno">{ROTULO_CATEGORIA[item.categoria]}</Selo>
-              {item.segmento ? <Selo variante="contorno">{ROTULO_SEGMENTO[item.segmento]}</Selo> : null}
               {item.daMinhaUt ? (
                 <Selo variante="contorno" className="border-grafite">
                   Sua UT
@@ -92,6 +90,18 @@ export default async function PaginaItemDaVitrine({ params }: PageProps<"/vitrin
                 <>
                   <dt className="text-muted-foreground">RM</dt>
                   <dd>{item.rm}</dd>
+                </>
+              ) : null}
+              {item.numeroSerie ? (
+                <>
+                  <dt className="text-muted-foreground">S/N</dt>
+                  <dd>{item.numeroSerie}</dd>
+                </>
+              ) : null}
+              {item.patrimonio ? (
+                <>
+                  <dt className="text-muted-foreground">Patrimônio</dt>
+                  <dd>{item.patrimonio}</dd>
                 </>
               ) : null}
               {item.valorDepreciacaoMensal !== null ? (

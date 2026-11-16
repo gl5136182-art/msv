@@ -5,7 +5,6 @@ import type {
   CategoriaItem,
   Estado,
   OrigemDimensoes,
-  Segmento,
   StatusItem,
   Unidade,
 } from "./itens.schemas";
@@ -21,8 +20,9 @@ export type DadosNovoItem = {
   utId: string;
   criadoPorId: string;
   categoria: CategoriaItem;
-  segmento: Segmento;
-  rm: string;
+  rm: string | null;
+  numeroSerie: string | null;
+  patrimonio: string | null;
   nome: string;
   marca: string;
   modelo: string;
@@ -109,6 +109,13 @@ export function atualizarQuantidade(id: string, dados: DadosQuantidade, cliente:
   return cliente.item.update({ where: { id }, data: dados, include: incluir });
 }
 
+export function registrarTransferencia(
+  dados: { itemId: string; registradoPorId: string; destino: string; quantidade: number },
+  cliente: ClienteDb = db,
+) {
+  return cliente.itemTransferencia.create({ data: dados });
+}
+
 const incluirVitrine = {
   ut: { select: { id: true, nome: true, cidade: true, uf: true } },
   // Só a capa: o card mostra uma miniatura.
@@ -122,7 +129,6 @@ export type ConsultaVitrine = {
   /** Palavras do termo buscado, já normalizadas (`normalizar`). Todas precisam aparecer. */
   termos: string[];
   categoria?: CategoriaItem;
-  segmento?: Segmento;
   uf?: string;
   utId?: string;
   estado?: Estado;
@@ -146,7 +152,6 @@ export async function listarVitrine(
     ut: { ativo: true, ...(consulta.uf ? { uf: consulta.uf } : {}) },
     ...(consulta.utId ? { utId: consulta.utId } : {}),
     ...(consulta.categoria ? { categoria: consulta.categoria } : {}),
-    ...(consulta.segmento ? { segmento: consulta.segmento } : {}),
     ...(consulta.estado ? { estado: consulta.estado } : {}),
     ...(consulta.termos.length > 0
       ? { AND: consulta.termos.map((termo) => ({ buscaNormalizada: { contains: termo } })) }
