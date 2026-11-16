@@ -14,7 +14,6 @@ export function filtrosDosParametros(parametros: ParametrosUrl): FiltrosVitrine 
   return filtrosVitrineSchema.parse({
     busca: primeiro(parametros.q),
     categoria: primeiro(parametros.categoria),
-    segmento: primeiro(parametros.segmento),
     uf: primeiro(parametros.uf),
     utId: primeiro(parametros.ut),
     estado: primeiro(parametros.condicao),
@@ -29,7 +28,6 @@ export function hrefVitrine(filtros: FiltrosVitrine, alteracoes: Partial<Filtros
   const parametros = new URLSearchParams();
   if (f.busca) parametros.set("q", f.busca);
   if (f.categoria) parametros.set("categoria", f.categoria);
-  if (f.segmento) parametros.set("segmento", f.segmento);
   if (f.uf) parametros.set("uf", f.uf);
   if (f.utId) parametros.set("ut", f.utId);
   if (f.estado) parametros.set("condicao", f.estado);
@@ -43,6 +41,6 @@ export function hrefVitrine(filtros: FiltrosVitrine, alteracoes: Partial<Filtros
 /** Há algum filtro ou busca aplicado (a ordenação e a página não contam). */
 export function temFiltros(filtros: FiltrosVitrine): boolean {
   return Boolean(
-    filtros.busca || filtros.categoria || filtros.segmento || filtros.uf || filtros.utId || filtros.estado,
+    filtros.busca || filtros.categoria || filtros.uf || filtros.utId || filtros.estado,
   );
 }

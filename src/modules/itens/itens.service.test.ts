@@ -2,6 +2,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { chaveFotoValida } from "@/lib/chaves-foto";
+import { ErroNegocio } from "@/lib/erro-negocio";
 import type { UsuarioLogado } from "@/lib/usuario-logado";
 
 vi.mock("@/infra/storage", () => ({
@@ -13,6 +14,7 @@ vi.mock("@/infra/db", () => ({ db: { $transaction: vi.fn() } }));
 vi.mock("@/infra/frete", () => ({ cotarFretes: vi.fn(), freteDisponivel: vi.fn(() => true) }));
 vi.mock("@/infra/llm", () => ({ completarJson: vi.fn(), iaDisponivel: vi.fn(() => true) }));
 vi.mock("@/modules/uts/uts.service", () => ({
+  exigirUtAtiva: vi.fn(),
   listarUtsAtivasPorIds: vi.fn(async (ids: string[]) => ids.map((id) => ({ id, rotulo: `UT ${id}` }))),
 }));
 vi.mock("./itens.repository", () => ({
@@ -21,6 +23,7 @@ vi.mock("./itens.repository", () => ({
   criar: vi.fn(),
   atualizar: vi.fn(),
   atualizarQuantidade: vi.fn(),
+  registrarTransferencia: vi.fn(),
   listarPorUts: vi.fn(),
   listarVitrine: vi.fn(),
   buscarDaVitrine: vi.fn(),
@@ -30,7 +33,7 @@ import { db } from "@/infra/db";
 import { cotarFretes } from "@/infra/frete";
 import { completarJson } from "@/infra/llm";
 import { criarUrlsUpload, obterUrls, remover } from "@/infra/storage";
-import { listarUtsAtivasPorIds } from "@/modules/uts/uts.service";
+import { exigirUtAtiva, listarUtsAtivasPorIds } from "@/modules/uts/uts.service";
 
 import * as repository from "./itens.repository";
 import type { ItemDetalheVitrineRegistro, ItemRegistro, ItemVitrineRegistro } from "./itens.repository";
@@ -47,6 +50,7 @@ import {
   obterItemDaUt,
   obterItemDaVitrine,
   prepararUploadFotos,
+  transferirItem,
 } from "./itens.service";
 
 const repo = vi.mocked(repository);
@@ -76,7 +80,6 @@ const FOTO_NOVA = {
 const entrada: ItemEntrada = {
   nome: "Furadeira de impacto",
   categoria: "material",
-  segmento: "industrial",
   rm: "123456",
   marca: "Bosch",
   modelo: "GSB 550",
@@ -100,7 +103,6 @@ function registro(parcial: Partial<ItemRegistro> = {}): ItemRegistro {
     utId: "ut1",
     criadoPorId: "alm",
     categoria: "material",
-    segmento: "industrial",
     rm: "123456",
     nome: "Furadeira de impacto",
     marca: "Bosch",
@@ -176,20 +178,31 @@ describe("prepararUploadFotos", () => {
 describe("montarBuscaNormalizada", () => {
   const base = { nome: "Furadeira de Impacto", marca: "Bosch", modelo: "GSB 550", rm: "123456" } as const;
 
-  it("junta nome, marca, modelo, RM, categoria, segmento e descrição, sem acento e em minúsculas", () => {
+  it("junta nome, marca, modelo, RM, categoria e descrição, sem acento e em minúsculas", () => {
     expect(
       montarBuscaNormalizada({
         ...base,
         categoria: "ativo",
-        segmento: "oleo_gas",
         descricao: "Com maleta  rígida",
       }),
-    ).toBe("furadeira de impacto bosch gsb 550 123456 ativo oleo & gas com maleta rigida");
+    ).toBe("furadeira de impacto bosch gsb 550 123456 ativo com maleta rigida");
   });
 
-  it("o segmento entra pelo rótulo, sem acento (Logística → logistica)", () => {
-    expect(montarBuscaNormalizada({ ...base, categoria: "material", segmento: "logistica" })).toBe(
-      "furadeira de impacto bosch gsb 550 123456 material logistica",
+  it("inclui o S/N e o patrimônio logo depois do RM, para a busca da vitrine achar por eles", () => {
+    expect(
+      montarBuscaNormalizada({
+        ...base,
+        numeroSerie: "SN0042",
+        patrimonio: "P9981",
+        categoria: "ativo",
+        descricao: "Com maleta",
+      }),
+    ).toBe("furadeira de impacto bosch gsb 550 123456 sn0042 p9981 ativo com maleta");
+  });
+
+  it("item sem RM, só com S/N, não deixa espaços sobrando", () => {
+    expect(montarBuscaNormalizada({ ...base, rm: null, numeroSerie: "SN0042", categoria: "material" })).toBe(
+      "furadeira de impacto bosch gsb 550 sn0042 material",
     );
   });
 
@@ -197,11 +210,10 @@ describe("montarBuscaNormalizada", () => {
     const longa = montarBuscaNormalizada({
       ...base,
       categoria: "material",
-      segmento: "energia",
       descricao: "palavra ".repeat(300),
     });
     expect(longa.length).toBe(500);
-    expect(longa.startsWith("furadeira de impacto bosch gsb 550 123456 material energia palavra")).toBe(true);
+    expect(longa.startsWith("furadeira de impacto bosch gsb 550 123456 material palavra")).toBe(true);
   });
 });
 
@@ -219,7 +231,6 @@ describe("criarItem", () => {
       utId: "ut1",
       criadoPorId: "alm",
       categoria: "material",
-      segmento: "industrial",
       rm: "123456",
       valorDepreciacaoMensal: null,
       lote: null,
@@ -231,7 +242,7 @@ describe("criarItem", () => {
       valorUnitarioReposicao: 450.9,
       fotos: [FOTO],
     });
-    expect(dados.buscaNormalizada).toBe("furadeira de impacto bosch gsb 550 123456 material industrial com maleta");
+    expect(dados.buscaNormalizada).toBe("furadeira de impacto bosch gsb 550 123456 material com maleta");
     // DTO: Decimal vira number, Date vira ISO.
     expect(dto.valorUnitarioReposicao).toBe(450.9);
     expect(dto.pesoKg).toBe(2.1);
@@ -293,11 +304,10 @@ describe("criarItem", () => {
     expect(repo.criar.mock.calls[0][0].lote).toBeNull();
   });
 
-  it("o DTO traz categoria, segmento, RM, depreciação e lote", async () => {
+  it("o DTO traz categoria, RM, depreciação e lote", async () => {
     repo.criar.mockResolvedValue(
       registro({
         categoria: "ativo",
-        segmento: "mineracao",
         rm: "000789",
         valorDepreciacaoMensal: new Prisma.Decimal("250.5"),
         larguraLoteCm: new Prisma.Decimal("120"),
@@ -309,17 +319,33 @@ describe("criarItem", () => {
     const dto = await criarItem(almoxarife, entrada);
     expect(dto).toMatchObject({
       categoria: "ativo",
-      segmento: "mineracao",
       rm: "000789",
       valorDepreciacaoMensal: 250.5,
       lote: { larguraCm: 120, alturaCm: 80, profundidadeCm: 100, pesoKg: 350.25 },
     });
   });
 
-  it("item antigo sem segmento, RM, depreciação e lote vira nulos no DTO", async () => {
-    repo.criar.mockResolvedValue(registro({ segmento: null, rm: null }));
+  it("grava o S/N e o patrimônio; quando não vêm, grava nulos", async () => {
+    await criarItem(almoxarife, { ...entrada, rm: undefined, numeroSerie: "SN0042", patrimonio: "P9981" });
+    expect(repo.criar.mock.calls[0][0]).toMatchObject({ rm: null, numeroSerie: "SN0042", patrimonio: "P9981" });
+    expect(repo.criar.mock.calls[0][0].buscaNormalizada).toContain("sn0042 p9981");
+
+    await criarItem(almoxarife, entrada);
+    expect(repo.criar.mock.calls[1][0]).toMatchObject({ numeroSerie: null, patrimonio: null });
+  });
+
+  it("o DTO traz o S/N e o patrimônio", async () => {
+    repo.criar.mockResolvedValue(registro({ numeroSerie: "SN0042", patrimonio: "P9981" }));
+    expect(await criarItem(almoxarife, entrada)).toMatchObject({ numeroSerie: "SN0042", patrimonio: "P9981" });
+
+    repo.criar.mockResolvedValue(registro());
+    expect(await criarItem(almoxarife, entrada)).toMatchObject({ numeroSerie: null, patrimonio: null });
+  });
+
+  it("item antigo sem RM, depreciação e lote vira nulos no DTO", async () => {
+    repo.criar.mockResolvedValue(registro({ rm: null }));
     const dto = await criarItem(almoxarife, entrada);
-    expect(dto).toMatchObject({ segmento: null, rm: null, valorDepreciacaoMensal: null, lote: null });
+    expect(dto).toMatchObject({ rm: null, valorDepreciacaoMensal: null, lote: null });
   });
 
   it("sem dimensões nem peso na entrada, grava nulos (não undefined)", async () => {
@@ -412,11 +438,10 @@ describe("editarItem", () => {
     await expect(editarItem(almoxarife, entradaEdicao)).rejects.toMatchObject({ codigo: "RM_DUPLICADO" });
   });
 
-  it("grava as novas regras: categoria, segmento, RM, depreciação e lote, e troca a depreciação ao virar Material", async () => {
+  it("grava as novas regras: categoria, RM, depreciação e lote, e troca a depreciação ao virar Material", async () => {
     await editarItem(almoxarife, {
       ...entradaEdicao,
       categoria: "ativo",
-      segmento: "facilities",
       rm: "555",
       valorDepreciacaoMensal: 90,
       larguraLoteCm: 10,
@@ -426,7 +451,6 @@ describe("editarItem", () => {
     });
     expect(repo.atualizar.mock.calls[0][1]).toMatchObject({
       categoria: "ativo",
-      segmento: "facilities",
       rm: "555",
       valorDepreciacaoMensal: 90,
       lote: { larguraCm: 10, alturaCm: 20, profundidadeCm: 30, pesoKg: 40 },
@@ -436,10 +460,19 @@ describe("editarItem", () => {
     expect(repo.atualizar.mock.calls[1][1]).toMatchObject({ categoria: "material", valorDepreciacaoMensal: null, lote: null });
   });
 
-  it("a busca normalizada é refeita com RM, categoria e segmento", async () => {
-    await editarItem(almoxarife, { ...entradaEdicao, categoria: "ativo", segmento: "energia", rm: "42" });
+  it("grava o S/N e o patrimônio, e apagar o campo no formulário limpa a coluna", async () => {
+    await editarItem(almoxarife, { ...entradaEdicao, numeroSerie: "SN1", patrimonio: "P2" });
+    expect(repo.atualizar.mock.calls[0][1]).toMatchObject({ numeroSerie: "SN1", patrimonio: "P2" });
+    expect(repo.atualizar.mock.calls[0][1].buscaNormalizada).toContain("sn1 p2");
+
+    await editarItem(almoxarife, entradaEdicao);
+    expect(repo.atualizar.mock.calls[1][1]).toMatchObject({ numeroSerie: null, patrimonio: null });
+  });
+
+  it("a busca normalizada é refeita com RM e categoria", async () => {
+    await editarItem(almoxarife, { ...entradaEdicao, categoria: "ativo", rm: "42" });
     expect(repo.atualizar.mock.calls[0][1].buscaNormalizada).toBe(
-      "furadeira de impacto bosch gsb 550 42 ativo energia com maleta",
+      "furadeira de impacto bosch gsb 550 42 ativo com maleta",
     );
   });
 });
@@ -551,6 +584,136 @@ describe("alterarArquivamento", () => {
   });
 });
 
+describe("transferirItem", () => {
+  const destinoUt = { id: "ut2", rotulo: "02 - BASE OPERACIONAL PARADAS" } as Awaited<ReturnType<typeof exigirUtAtiva>>;
+  const pedido = { id: "item1", destinoUtId: "ut2", quantidade: 2 };
+
+  beforeEach(() => {
+    repo.buscarPorId.mockResolvedValue(registro({ quantidadeTotal: 10, quantidadeDisponivel: 6 }));
+    repo.registrarTransferencia.mockResolvedValue({} as never);
+    repo.atualizarQuantidade.mockResolvedValue(registro());
+    vi.mocked(exigirUtAtiva).mockResolvedValue(destinoUt);
+  });
+
+  function nadaGravado() {
+    expect(db.$transaction).not.toHaveBeenCalled();
+    expect(repo.registrarTransferencia).not.toHaveBeenCalled();
+    expect(repo.atualizarQuantidade).not.toHaveBeenCalled();
+  }
+
+  it("transferência parcial: registra a saída e desconta do estoque na mesma transação", async () => {
+    await transferirItem(almoxarife, pedido);
+
+    expect(exigirUtAtiva).toHaveBeenCalledWith("ut2");
+    expect(db.$transaction).toHaveBeenCalledTimes(1);
+    expect(repo.registrarTransferencia).toHaveBeenCalledWith(
+      { itemId: "item1", registradoPorId: "alm", destino: "02 - BASE OPERACIONAL PARADAS", quantidade: 2 },
+      TX,
+    );
+    expect(repo.atualizarQuantidade).toHaveBeenCalledWith(
+      "item1",
+      { quantidadeDisponivel: 4, quantidadeTotal: 8, status: "disponivel" },
+      TX,
+    );
+  });
+
+  it("transferir tudo que está disponível marca o item como transferido", async () => {
+    await transferirItem(almoxarife, { ...pedido, quantidade: 6 });
+
+    expect(repo.atualizarQuantidade).toHaveBeenCalledWith(
+      "item1",
+      { quantidadeDisponivel: 0, quantidadeTotal: 4, status: "transferido" },
+      TX,
+    );
+  });
+
+  it("devolve o item já atualizado", async () => {
+    repo.atualizarQuantidade.mockResolvedValue(
+      registro({ status: "transferido", quantidadeDisponivel: 0, quantidadeTotal: 4 }),
+    );
+    const dto = await transferirItem(almoxarife, { ...pedido, quantidade: 6 });
+    expect(dto).toMatchObject({ id: "item1", status: "transferido", quantidadeDisponivel: 0, quantidadeTotal: 4 });
+  });
+
+  it("almoxarife de várias UTs transfere item de uma UT adicional para a principal", async () => {
+    const dosDois = { ...almoxarife, utsAdicionais: ["ut3"] };
+    repo.buscarPorId.mockResolvedValue(registro({ utId: "ut3", quantidadeTotal: 10, quantidadeDisponivel: 6 }));
+    vi.mocked(exigirUtAtiva).mockResolvedValue({ id: "ut1", rotulo: "01 - SEDE" } as typeof destinoUt);
+
+    await transferirItem(dosDois, { ...pedido, destinoUtId: "ut1" });
+
+    expect(repo.registrarTransferencia.mock.calls[0][0]).toMatchObject({ destino: "01 - SEDE", registradoPorId: "alm" });
+  });
+
+  it.each([
+    ["arquivado", 6],
+    ["transferido", 0],
+    ["esgotado", 0],
+    ["disponivel", 0],
+  ] as const)("item %s com %i unidade(s) disponível(is) não pode ser transferido", async (status, disponivel) => {
+    repo.buscarPorId.mockResolvedValue(registro({ status, quantidadeTotal: 10, quantidadeDisponivel: disponivel }));
+
+    await expect(transferirItem(almoxarife, pedido)).rejects.toMatchObject({ codigo: "SEM_ESTOQUE" });
+    expect(exigirUtAtiva).not.toHaveBeenCalled();
+    nadaGravado();
+  });
+
+  it("recusa quantidade acima do disponível e diz quantas unidades há", async () => {
+    await expect(transferirItem(almoxarife, { ...pedido, quantidade: 7 })).rejects.toMatchObject({
+      codigo: "QUANTIDADE_INVALIDA",
+      message: "Só há 6 unidade(s) disponível(is) para transferir.",
+    });
+    nadaGravado();
+  });
+
+  it("o destino não pode ser a própria UT do item", async () => {
+    await expect(transferirItem(almoxarife, { ...pedido, destinoUtId: "ut1" })).rejects.toMatchObject({
+      codigo: "DESTINO_INVALIDO",
+    });
+    expect(exigirUtAtiva).not.toHaveBeenCalled();
+    nadaGravado();
+  });
+
+  it("UT de destino inativa ou inexistente é recusada antes de gravar", async () => {
+    vi.mocked(exigirUtAtiva).mockRejectedValueOnce(new ErroNegocio("UT_INATIVA", "Esta UT está inativa."));
+
+    await expect(transferirItem(almoxarife, pedido)).rejects.toMatchObject({ codigo: "UT_INATIVA" });
+    nadaGravado();
+  });
+
+  it("só o almoxarife da UT do item transfere", async () => {
+    await expect(transferirItem(colaborador, pedido)).rejects.toMatchObject({ codigo: "SEM_PERMISSAO" });
+    await expect(transferirItem(admin, pedido)).rejects.toMatchObject({ codigo: "SEM_PERMISSAO" });
+    expect(repo.buscarPorId).not.toHaveBeenCalled();
+
+    repo.buscarPorId.mockResolvedValue(registro({ utId: "outra-ut" }));
+    await expect(transferirItem(almoxarife, pedido)).rejects.toMatchObject({ codigo: "SEM_PERMISSAO" });
+    nadaGravado();
+  });
+
+  it("recusa usuário inativo", async () => {
+    await expect(transferirItem({ ...almoxarife, ativo: false }, pedido)).rejects.toMatchObject({
+      codigo: "USUARIO_INATIVO",
+    });
+    expect(repo.buscarPorId).not.toHaveBeenCalled();
+  });
+
+  it("item inexistente", async () => {
+    repo.buscarPorId.mockResolvedValue(null);
+    await expect(transferirItem(almoxarife, pedido)).rejects.toMatchObject({ codigo: "ITEM_NAO_ENCONTRADO" });
+    nadaGravado();
+  });
+
+  it("falha ao descontar o estoque derruba a transação inteira (o registro da saída não fica sozinho)", async () => {
+    repo.atualizarQuantidade.mockRejectedValueOnce(new Error("conexão perdida"));
+
+    await expect(transferirItem(almoxarife, pedido)).rejects.toThrow("conexão perdida");
+    // Os dois passos usam o cliente da transação: o banco desfaz tudo junto.
+    expect(repo.registrarTransferencia.mock.calls[0][1]).toBe(TX);
+    expect(repo.atualizarQuantidade.mock.calls[0][2]).toBe(TX);
+  });
+});
+
 function registroVitrine(parcial: Partial<ItemVitrineRegistro> = {}): ItemVitrineRegistro {
   return {
     ...registro({ utId: "ut2" }),
@@ -571,7 +734,6 @@ describe("filtrosVitrineSchema", () => {
     const r = filtrosVitrineSchema.parse({
       busca: "  furadeira bosch ",
       categoria: "ativo",
-      segmento: "energia",
       uf: "mg",
       utId: "ut2",
       estado: "novo",
@@ -581,7 +743,6 @@ describe("filtrosVitrineSchema", () => {
     expect(r).toEqual({
       busca: "furadeira bosch",
       categoria: "ativo",
-      segmento: "energia",
       uf: "MG",
       utId: "ut2",
       estado: "novo",
@@ -595,7 +756,6 @@ describe("filtrosVitrineSchema", () => {
       uf: "XX",
       estado: "quebrado",
       categoria: "outra",
-      segmento: "varejo",
       ordenar: "aleatorio",
       pagina: "-2",
     });
@@ -645,7 +805,6 @@ describe("listarVitrine", () => {
     await listarVitrine(colaborador, {
       ...filtrosPadrao,
       categoria: "ativo",
-      segmento: "oleo_gas",
       uf: "MG",
       utId: "ut2",
       estado: "novo",
@@ -655,7 +814,6 @@ describe("listarVitrine", () => {
     expect(repo.listarVitrine.mock.calls[0][0]).toEqual({
       termos: [],
       categoria: "ativo",
-      segmento: "oleo_gas",
       uf: "MG",
       utId: "ut2",
       estado: "novo",

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   intervaloDoPeriodo,
   resumirEstoque,
-  simular,
+  resumirTransferencias,
   valorParadoPorCategoria,
   valorParadoPorUt,
   type ItemDisponivelBase,
@@ -45,6 +45,16 @@ describe("KPIs", () => {
     ]);
     expect(resumo).toEqual({ itens: 2, unidades: 13, valorParado: 3252.5 });
   });
+
+  it("transferências: soma unidades e valor e conta itens distintos", () => {
+    const resumo = resumirTransferencias([
+      { itemId: "i1", quantidade: 2, valorUnitarioReposicao: 100.5 },
+      { itemId: "i1", quantidade: 1, valorUnitarioReposicao: 100.5 },
+      { itemId: "i2", quantidade: 4, valorUnitarioReposicao: 10 },
+    ]);
+    expect(resumo).toEqual({ itens: 2, unidades: 7, valor: 341.5 });
+    expect(resumirTransferencias([])).toEqual({ itens: 0, unidades: 0, valor: 0 });
+  });
 });
 
 describe("gráficos", () => {
@@ -77,42 +87,5 @@ describe("gráficos", () => {
       { id: "ativo", rotulo: "Ativo", valor: 600 },
       { id: "material", rotulo: "Material", valor: 150 },
     ]);
-  });
-});
-
-describe("simulador", () => {
-  const base = {
-    valorParado: 100_000,
-    itensDisponiveis: 40,
-    valorCadastrado90d: 20_000,
-    itensCadastrados90d: 10,
-    freteMedio: 150,
-  };
-
-  it("projeção imediata = valor ocioso × % − itens × % × frete", () => {
-    // 100000 × 0,3 − 40 × 0,3 × 150 = 30000 − 1800
-    expect(simular({ ...base, percentual: 30 }).imediata).toBe(28_200);
-  });
-
-  it("projeção anual = valor cadastrado em 90 dias × 4 × % − frete proporcional", () => {
-    // 20000 × 4 × 0,3 − 10 × 4 × 0,3 × 150 = 24000 − 1800
-    expect(simular({ ...base, percentual: 30 }).anual).toBe(22_200);
-  });
-
-  it("0% não projeta nada e 100% reaproveita tudo", () => {
-    expect(simular({ ...base, percentual: 0 })).toEqual({ imediata: 0, anual: 0 });
-    expect(simular({ ...base, percentual: 100 }).imediata).toBe(100_000 - 40 * 150);
-  });
-
-  it("o frete pode inverter a projeção (não esconde o prejuízo)", () => {
-    const projecao = simular({ ...base, valorParado: 1000, itensDisponiveis: 10, percentual: 100, freteMedio: 500 });
-    expect(projecao.imediata).toBe(-4000);
-  });
-
-  it("ignora percentual fora de 0–100 e frete negativo", () => {
-    expect(simular({ ...base, percentual: 150 })).toEqual(simular({ ...base, percentual: 100 }));
-    expect(simular({ ...base, percentual: 50, freteMedio: -10 })).toEqual(
-      simular({ ...base, percentual: 50, freteMedio: 0 }),
-    );
   });
 });

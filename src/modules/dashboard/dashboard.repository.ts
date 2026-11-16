@@ -1,6 +1,6 @@
 import { db, type ClienteDb } from "@/infra/db";
 
-import type { ItemCadastradoBase, ItemDisponivelBase, UtBase } from "./dashboard.regras";
+import type { ItemDisponivelBase, TransferenciaBase, UtBase } from "./dashboard.regras";
 import type { CategoriaItem } from "@/modules/itens/itens.schemas";
 
 // Leituras do dashboard (SPEC §6.5). Devolve registros simples (`Decimal` já convertido em
@@ -39,25 +39,28 @@ export async function listarItensDisponiveis(
   }));
 }
 
-/** Itens cadastrados desde `desde` (qualquer status): base da taxa e do "valor cadastrado". */
-export async function listarItensCadastradosDesde(
-  desde: Date,
+/** Transferências registradas no período (itens da UT/categoria filtradas), com o valor de reposição do item. */
+export async function listarTransferenciasNoPeriodo(
+  inicio: Date,
+  fim: Date,
   filtro: FiltroDados,
   cliente: ClienteDb = db,
-): Promise<ItemCadastradoBase[]> {
-  const itens = await cliente.item.findMany({
+): Promise<TransferenciaBase[]> {
+  const transferencias = await cliente.itemTransferencia.findMany({
     where: {
-      criadoEm: { gte: desde },
-      ...(filtro.utId ? { utId: filtro.utId } : {}),
-      ...(filtro.categoria ? { categoria: filtro.categoria } : {}),
+      criadoEm: { gte: inicio, lte: fim },
+      item: {
+        ...(filtro.utId ? { utId: filtro.utId } : {}),
+        ...(filtro.categoria ? { categoria: filtro.categoria } : {}),
+      },
     },
-    select: { criadoEm: true, quantidadeTotal: true, valorUnitarioReposicao: true },
+    select: { itemId: true, quantidade: true, item: { select: { valorUnitarioReposicao: true } } },
   });
 
-  return itens.map((item) => ({
-    criadoEm: item.criadoEm,
-    quantidadeTotal: item.quantidadeTotal,
-    valorUnitarioReposicao: item.valorUnitarioReposicao.toNumber(),
+  return transferencias.map((t) => ({
+    itemId: t.itemId,
+    quantidade: t.quantidade,
+    valorUnitarioReposicao: t.item.valorUnitarioReposicao.toNumber(),
   }));
 }
 

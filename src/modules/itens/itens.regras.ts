@@ -10,7 +10,7 @@ import type { StatusItem } from "./itens.schemas";
  * - `arquivado` é decisão manual e não muda por quantidade (regra 4).
  */
 export function statusAposMudarQuantidade(statusAtual: StatusItem, quantidadeDisponivel: number): StatusItem {
-  if (statusAtual === "arquivado") return "arquivado";
+  if (statusAtual === "arquivado" || statusAtual === "transferido") return statusAtual;
   return quantidadeDisponivel > 0 ? "disponivel" : "esgotado";
 }
 
@@ -46,4 +46,26 @@ export function calcularAjusteDeQuantidade(
 export function statusAposArquivamento(arquivar: boolean, quantidadeDisponivel: number): StatusItem {
   if (arquivar) return "arquivado";
   return quantidadeDisponivel > 0 ? "disponivel" : "esgotado";
+}
+
+/**
+ * Transferência de unidades para fora da UT. Desconta do disponível e do total (as unidades
+ * saíram). Sobrando unidades, o item segue como está; zerando, vira `transferido`.
+ */
+export function calcularTransferencia(
+  item: { quantidadeTotal: number; quantidadeDisponivel: number; status: StatusItem },
+  quantidade: number,
+): ResultadoDoAjuste {
+  if (!Number.isInteger(quantidade) || quantidade < 1) {
+    throw new RangeError("A quantidade transferida deve ser um inteiro maior que zero.");
+  }
+  if (quantidade > item.quantidadeDisponivel) {
+    throw new RangeError("A quantidade transferida passa do disponível.");
+  }
+  const quantidadeDisponivel = item.quantidadeDisponivel - quantidade;
+  return {
+    quantidadeDisponivel,
+    quantidadeTotal: Math.max(item.quantidadeTotal - quantidade, 0),
+    status: quantidadeDisponivel > 0 ? item.status : "transferido",
+  };
 }

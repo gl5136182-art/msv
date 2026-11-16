@@ -18,12 +18,22 @@ function montarKpis(kpis: KpisDto): Kpi[] {
       valor: formatarMoedaResumida(kpis.valorParado),
       detalhe: `${formatarMoeda(kpis.valorParado)} em reposição`,
     },
+    {
+      rotulo: "Valor transferido",
+      valor: formatarMoedaResumida(kpis.valorTransferido),
+      detalhe: `${formatarMoeda(kpis.valorTransferido)} no período`,
+    },
+    {
+      rotulo: "Itens transferidos",
+      valor: formatarNumero(kpis.itensTransferidos.unidades),
+      detalhe: `${formatarNumero(kpis.itensTransferidos.itens)} ${kpis.itensTransferidos.itens === 1 ? "item" : "itens"} no período`,
+    },
   ];
 }
 
 export function LinhaKpis({ kpis }: { kpis: KpisDto }) {
   return (
-    <ul aria-label="Resumo do estoque" className="grid grid-cols-2 rounded-md bg-card text-foreground">
+    <ul aria-label="Resumo do estoque" className="grid grid-cols-2 rounded-md lg:grid-cols-4 bg-card text-foreground">
       {montarKpis(kpis).map((kpi) => (
         <li
           key={kpi.rotulo}

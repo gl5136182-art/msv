@@ -11,6 +11,7 @@ import {
   filtrosVitrineSchema,
   itemSchema,
   prepararUploadFotosSchema,
+  transferirItemSchema,
   type CotacaoFreteDto,
   type ItemDetalheVitrineDto,
   type ItemDto,
@@ -58,6 +59,13 @@ export async function alterarArquivamento(entrada: unknown): Promise<Resultado<I
   if (!dados.success) return falhaDeValidacao(dados.error);
 
   return executar(async () => service.alterarArquivamento(await exigirUsuarioLogado(), dados.data));
+}
+
+export async function transferirItem(entrada: unknown): Promise<Resultado<ItemDto>> {
+  const dados = transferirItemSchema.safeParse(entrada);
+  if (!dados.success) return falhaDeValidacao(dados.error);
+
+  return executar(async () => service.transferirItem(await exigirUsuarioLogado(), dados.data));
 }
 
 export async function listarItensDaUt(): Promise<Resultado<ItemResumoDto[]>> {

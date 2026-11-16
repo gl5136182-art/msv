@@ -7,15 +7,16 @@ import { normalizar } from "@/lib/normalizar";
 import { exigirPapel } from "@/lib/permissoes";
 import { temPapel, utsDoUsuario, vinculadoAUt, type UsuarioLogado } from "@/lib/usuario-logado";
 import { recomendarFrete, recomendarMenorCusto } from "@/modules/ia/recomendar-frete";
-import { listarUtsAtivasPorIds } from "@/modules/uts/uts.service";
+import { exigirUtAtiva, listarUtsAtivasPorIds } from "@/modules/uts/uts.service";
 
 import { prepararCargaFrete } from "./carga-frete";
 import * as repository from "./itens.repository";
 import type { DadosNovoItem, ItemRegistro } from "./itens.repository";
-import { calcularAjusteDeQuantidade, statusAposArquivamento } from "./itens.regras";
+import { calcularAjusteDeQuantidade, calcularTransferencia, statusAposArquivamento } from "./itens.regras";
 import type {
   AjustarQuantidadeEntrada,
   AlterarArquivamentoEntrada,
+  TransferirItemEntrada,
   CategoriaItem,
   EditarItemEntrada,
   CotarFreteEntrada,
@@ -29,10 +30,9 @@ import type {
   MedidasLoteDto,
   PaginaVitrineDto,
   PrepararUploadFotosEntrada,
-  Segmento,
   UploadFotoDto,
 } from "./itens.schemas";
-import { ITENS_POR_PAGINA_VITRINE, ROTULO_CATEGORIA, ROTULO_SEGMENTO } from "./itens.schemas";
+import { ITENS_POR_PAGINA_VITRINE, ROTULO_CATEGORIA } from "./itens.schemas";
 
 // Itens (SPEC §6.1). Só o almoxarife cadastra e edita; a UT vem da sessão.
 
@@ -64,7 +64,7 @@ const LIMITE_BUSCA_NORMALIZADA = 500;
 
 /**
  * Texto de busca do item, sem acento (SPEC §5): nome + marca + modelo + RM + categoria +
- * segmento + descrição. A descrição vai por último porque é o que o corte dos 500 caracteres
+ * descrição. A descrição vai por último porque é o que o corte dos 500 caracteres
  * leva embora quando ela é longa.
  */
 export function montarBuscaNormalizada(item: {
@@ -72,9 +72,10 @@ export function montarBuscaNormalizada(item: {
   marca: string;
   modelo: string;
   /** `null` nos itens importados do inventário que ainda não têm RM. */
-  rm: string | null;
+  rm?: string | null;
+  numeroSerie?: string | null;
+  patrimonio?: string | null;
   categoria: CategoriaItem;
-  segmento: Segmento;
   descricao?: string | null;
 }): string {
   const texto = normalizar(
@@ -83,8 +84,9 @@ export function montarBuscaNormalizada(item: {
       item.marca,
       item.modelo,
       item.rm ?? "",
+      item.numeroSerie ?? "",
+      item.patrimonio ?? "",
       ROTULO_CATEGORIA[item.categoria],
-      ROTULO_SEGMENTO[item.segmento],
       item.descricao ?? "",
     ].join(" "),
   );
@@ -140,8 +142,9 @@ export function paraDto(item: ItemRegistro): ItemDto {
     modelo: item.modelo,
     descricao: item.descricao,
     categoria: item.categoria,
-    segmento: item.segmento,
     rm: item.rm,
+    numeroSerie: item.numeroSerie,
+    patrimonio: item.patrimonio,
     estado: item.estado,
     unidade: item.unidade,
     quantidadeTotal: item.quantidadeTotal,
@@ -171,15 +174,16 @@ export async function criarItem(usuario: UsuarioLogado, entrada: ItemEntrada): P
     throw new ErroNegocio("SEM_UT", "Seu usuário não está vinculado a uma UT. Fale com o administrador.");
   }
 
-  await exigirRmLivre(entrada.rm, null);
+  if (entrada.rm) await exigirRmLivre(entrada.rm, null);
 
   try {
     const item = await repository.criar({
       utId: usuario.utId,
       criadoPorId: usuario.id,
       categoria: entrada.categoria,
-      segmento: entrada.segmento,
-      rm: entrada.rm,
+      rm: entrada.rm ?? null,
+      numeroSerie: entrada.numeroSerie ?? null,
+      patrimonio: entrada.patrimonio ?? null,
       nome: entrada.nome,
       marca: entrada.marca,
       modelo: entrada.modelo,
@@ -261,7 +265,7 @@ export async function editarItem(usuario: UsuarioLogado, entrada: EditarItemEntr
   exigirPapel(usuario, "almoxarife");
   const atual = await buscarItemDaUt(usuario, entrada.id);
 
-  await exigirRmLivre(entrada.rm, atual.id);
+  if (entrada.rm) await exigirRmLivre(entrada.rm, atual.id);
 
   let atualizado: ItemRegistro;
   try {
@@ -270,8 +274,9 @@ export async function editarItem(usuario: UsuarioLogado, entrada: EditarItemEntr
         atual.id,
         {
           categoria: entrada.categoria,
-          segmento: entrada.segmento,
-          rm: entrada.rm,
+          rm: entrada.rm ?? null,
+          numeroSerie: entrada.numeroSerie ?? null,
+          patrimonio: entrada.patrimonio ?? null,
           nome: entrada.nome,
           marca: entrada.marca,
           modelo: entrada.modelo,
@@ -349,6 +354,37 @@ export async function alterarArquivamento(
   );
 }
 
+/**
+ * Registra a saída de unidades para outro lugar. Só o almoxarife da UT do item.
+ * Sobrando unidades o item segue como está e só perde a quantia transferida; zerando, vira `transferido`.
+ */
+export async function transferirItem(usuario: UsuarioLogado, entrada: TransferirItemEntrada): Promise<ItemDto> {
+  exigirPapel(usuario, "almoxarife");
+  const atual = await buscarItemDaUt(usuario, entrada.id);
+
+  if (atual.status === "arquivado" || atual.status === "transferido" || atual.quantidadeDisponivel < 1) {
+    throw new ErroNegocio("SEM_ESTOQUE", "Este item não tem unidades disponíveis para transferir.");
+  }
+  if (entrada.quantidade > atual.quantidadeDisponivel) {
+    throw new ErroNegocio("QUANTIDADE_INVALIDA", `Só há ${atual.quantidadeDisponivel} unidade(s) disponível(is) para transferir.`);
+  }
+
+  if (entrada.destinoUtId === atual.utId) {
+    throw new ErroNegocio("DESTINO_INVALIDO", "Escolha uma UT diferente da UT do item.");
+  }
+  const destinoUt = await exigirUtAtiva(entrada.destinoUtId);
+
+  const novo = calcularTransferencia(atual, entrada.quantidade);
+  const atualizado = await db.$transaction(async (tx) => {
+    await repository.registrarTransferencia(
+      { itemId: atual.id, registradoPorId: usuario.id, destino: destinoUt.rotulo, quantidade: entrada.quantidade },
+      tx,
+    );
+    return repository.atualizarQuantidade(atual.id, novo, tx);
+  });
+  return paraDto(atualizado);
+}
+
 const MAXIMO_TERMOS_BUSCA = 8;
 
 /**
@@ -367,7 +403,6 @@ export async function listarVitrine(usuario: UsuarioLogado, filtros: FiltrosVitr
   const consulta = {
     termos,
     categoria: filtros.categoria,
-    segmento: filtros.segmento,
     uf: filtros.uf,
     utId: filtros.utId,
     estado: filtros.estado,
@@ -397,8 +432,7 @@ export async function listarVitrine(usuario: UsuarioLogado, filtros: FiltrosVitr
       modelo: item.modelo,
       rm: item.rm,
       categoria: item.categoria,
-      segmento: item.segmento,
-      estado: item.estado,
+        estado: item.estado,
       unidade: item.unidade,
       quantidadeDisponivel: item.quantidadeDisponivel,
       valorUnitarioReposicao: item.valorUnitarioReposicao.toNumber(),
@@ -442,8 +476,9 @@ export async function obterItemDaVitrine(usuario: UsuarioLogado, id: string): Pr
     modelo: item.modelo,
     descricao: item.descricao,
     rm: item.rm,
+    numeroSerie: item.numeroSerie,
+    patrimonio: item.patrimonio,
     categoria: item.categoria,
-    segmento: item.segmento,
     estado: item.estado,
     unidade: item.unidade,
     quantidadeDisponivel: item.quantidadeDisponivel,

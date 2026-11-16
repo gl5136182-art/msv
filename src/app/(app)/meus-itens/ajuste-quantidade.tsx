@@ -56,6 +56,7 @@ export function AjusteQuantidade({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-base font-medium">Quantidade disponível</h2>
         {status === "esgotado" ? <Selo variante="neutro">Esgotado</Selo> : null}
+        {status === "transferido" ? <Selo variante="info">Transferido</Selo> : null}
         {status === "arquivado" ? <Selo variante="neutro">Arquivado</Selo> : null}
       </div>
       <p className="text-sm text-muted-foreground">

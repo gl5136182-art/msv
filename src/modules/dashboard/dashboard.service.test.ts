@@ -5,8 +5,8 @@ import type { UsuarioLogado } from "@/lib/usuario-logado";
 vi.mock("@/infra/db", () => ({ db: {} }));
 vi.mock("./dashboard.repository", () => ({
   listarItensDisponiveis: vi.fn(),
-  listarItensCadastradosDesde: vi.fn(),
   listarUtsParaFiltro: vi.fn(),
+  listarTransferenciasNoPeriodo: vi.fn(),
 }));
 
 import * as repository from "./dashboard.repository";
@@ -39,8 +39,8 @@ const padrao = filtrosDashboardSchema.parse({});
 beforeEach(() => {
   vi.resetAllMocks();
   repo.listarItensDisponiveis.mockResolvedValue([]);
-  repo.listarItensCadastradosDesde.mockResolvedValue([]);
   repo.listarUtsParaFiltro.mockResolvedValue([utA, utB]);
+  repo.listarTransferenciasNoPeriodo.mockResolvedValue([]);
 });
 
 describe("filtros por papel (SPEC §6.5)", () => {
@@ -63,7 +63,10 @@ describe("filtros por papel (SPEC §6.5)", () => {
     await obterDashboard(colaborador, { ...padrao, categoria: "ativo" }, agora);
 
     expect(repo.listarItensDisponiveis).toHaveBeenCalledWith({ utId: "ut-a", categoria: "ativo" });
-    expect(repo.listarItensCadastradosDesde).toHaveBeenCalledWith(expect.any(Date), { utId: "ut-a", categoria: "ativo" });
+    expect(repo.listarTransferenciasNoPeriodo).toHaveBeenCalledWith(expect.any(Date), agora, {
+      utId: "ut-a",
+      categoria: "ativo",
+    });
   });
 });
 
@@ -77,16 +80,15 @@ describe("autorização", () => {
 });
 
 describe("indicadores", () => {
-  it("monta KPIs, gráficos e a base do simulador", async () => {
+  it("monta KPIs e gráficos", async () => {
     repo.listarItensDisponiveis.mockResolvedValue([
       { ut: utA, categoria: "ativo", quantidadeDisponivel: 3, valorUnitarioReposicao: 1000 },
       { ut: utB, categoria: "material", quantidadeDisponivel: 10, valorUnitarioReposicao: 20 },
     ]);
-    repo.listarItensCadastradosDesde.mockResolvedValue([
-      // Dentro dos 90 dias e do período.
-      { criadoEm: new Date("2026-09-01T15:00:00Z"), quantidadeTotal: 8, valorUnitarioReposicao: 500 },
-      // Fora dos 90 dias, dentro do período de 12 meses.
-      { criadoEm: new Date("2026-03-01T15:00:00Z"), quantidadeTotal: 12, valorUnitarioReposicao: 100 },
+    repo.listarTransferenciasNoPeriodo.mockResolvedValue([
+      { itemId: "i1", quantidade: 2, valorUnitarioReposicao: 100.5 },
+      { itemId: "i1", quantidade: 1, valorUnitarioReposicao: 100.5 },
+      { itemId: "i2", quantidade: 4, valorUnitarioReposicao: 10 },
     ]);
 
     const d = await obterDashboard(admin, padrao, agora);
@@ -94,31 +96,20 @@ describe("indicadores", () => {
     expect(d.filtros).toEqual({ periodo: "12m", utId: null, categoria: null });
     expect(d.kpis.itensNaVitrine).toEqual({ itens: 2, unidades: 13 });
     expect(d.kpis.valorParado).toBe(3200);
+    expect(d.kpis.valorTransferido).toBe(341.5);
+    expect(d.kpis.itensTransferidos).toEqual({ unidades: 7, itens: 2 });
 
     expect(d.graficos.valorParadoPorUt.map((b) => b.id)).toEqual(["ut-a", "ut-b"]);
     expect(d.graficos.valorParadoPorCategoria.map((b) => b.id)).toEqual(["ativo", "material"]);
 
-    expect(d.simulador).toEqual({
-      valorParado: 3200,
-      itensDisponiveis: 2,
-      valorCadastrado90d: 4000,
-      itensCadastrados90d: 1,
-      freteMedioPadrao: 150,
-    });
     expect(d.geradoEm).toBe(agora.toISOString());
   });
 
-  it("a busca de cadastros cobre o período e os 90 dias do simulador", async () => {
-    repo.listarItensCadastradosDesde.mockResolvedValue([
-      { criadoEm: new Date("2026-07-20T15:00:00Z"), quantidadeTotal: 7, valorUnitarioReposicao: 100 },
-      { criadoEm: new Date("2026-09-01T15:00:00Z"), quantidadeTotal: 10, valorUnitarioReposicao: 100 },
-    ]);
-    const d = await obterDashboard(admin, { ...padrao, periodo: "3m" }, agora);
+  it("busca as transferências desde o início do período até agora", async () => {
+    await obterDashboard(admin, { ...padrao, periodo: "3m" }, agora);
 
-    expect(d.simulador.itensCadastrados90d).toBe(2);
-
-    // Busca desde o mais antigo entre o início do período (01/08) e 90 dias atrás (16/07).
-    const [desde] = repo.listarItensCadastradosDesde.mock.calls[0];
-    expect(desde.toISOString()).toBe("2026-07-16T15:00:00.000Z");
+    const [inicio, fim] = repo.listarTransferenciasNoPeriodo.mock.calls[0];
+    expect(inicio.toISOString()).toBe("2026-08-01T03:00:00.000Z");
+    expect(fim).toBe(agora);
   });
 });

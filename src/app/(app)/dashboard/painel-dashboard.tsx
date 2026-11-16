@@ -4,10 +4,9 @@ import type { DashboardDto } from "@/modules/dashboard/dashboard.schemas";
 import { FiltrosDashboard } from "./filtros-dashboard";
 import { GraficoValorParadoPorCategoria, GraficoValorParadoPorUt } from "./graficos";
 import { LinhaKpis } from "./linha-kpis";
-import { Simulador } from "./simulador";
 
 // Painel "Estoque e economia" (SPEC §6.5, DESIGN §7): cabeçalho e filtros escuros, resumo de KPIs,
-// gráficos, simulador de largura total e rodapé, sobre fundo cinza com 8px entre os cards.
+// gráficos e rodapé, sobre fundo cinza com 8px entre os cards.
 export function PainelDashboard({ dados: d }: { dados: DashboardDto }) {
   const chaveFiltros = `${d.filtros.periodo}|${d.filtros.utId ?? "todas"}|${d.filtros.categoria ?? ""}`;
 
@@ -36,8 +35,6 @@ export function PainelDashboard({ dados: d }: { dados: DashboardDto }) {
           <GraficoValorParadoPorUt barras={d.graficos.valorParadoPorUt} />
           <GraficoValorParadoPorCategoria barras={d.graficos.valorParadoPorCategoria} />
         </div>
-
-        <Simulador key={chaveFiltros} base={d.simulador} />
 
         <footer className="flex flex-wrap justify-between gap-x-4 gap-y-1 pt-1 text-xs text-muted-foreground">
           <p>Fonte: MSV | Atualizado em {formatarDataHora(d.geradoEm)}</p>

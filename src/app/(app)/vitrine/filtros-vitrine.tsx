@@ -16,8 +16,6 @@ import {
   ROTULO_CATEGORIA,
   ROTULO_ESTADO,
   ROTULO_ORDENACAO_VITRINE,
-  ROTULO_SEGMENTO,
-  SEGMENTOS,
   type FiltrosVitrine,
 } from "@/modules/itens/itens.schemas";
 
@@ -73,17 +71,6 @@ export function FiltrosVitrineForm({ filtros, uts, ufs, comFiltros }: Props) {
             {CATEGORIAS_ITEM.map((c) => (
               <option key={c} value={c}>
                 {ROTULO_CATEGORIA[c]}
-              </option>
-            ))}
-          </Seletor>
-        </Campo>
-
-        <Campo htmlFor="vitrine-segmento" rotulo="Segmento">
-          <Seletor id="vitrine-segmento" name="segmento" defaultValue={filtros.segmento ?? ""}>
-            <option value="">Todos</option>
-            {SEGMENTOS.map((s) => (
-              <option key={s} value={s}>
-                {ROTULO_SEGMENTO[s]}
               </option>
             ))}
           </Seletor>
